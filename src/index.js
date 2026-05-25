@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 
+import authRouter from './routes/auth.js';
 import servicesRouter from './routes/services.js';
 import specialistsRouter from './routes/specialists.js';
 import bookingsRouter from './routes/bookings.js';
@@ -15,6 +16,7 @@ app.use(morgan('dev'));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+app.use('/api/auth', authRouter);
 app.use('/api/services', servicesRouter);
 app.use('/api/specialists', specialistsRouter);
 app.use('/api/bookings', bookingsRouter);
