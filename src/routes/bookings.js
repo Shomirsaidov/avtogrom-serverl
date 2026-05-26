@@ -12,6 +12,7 @@ const createBookingSchema = z.object({
   scheduled_at: z.string().datetime(),
   customer_name: z.string().min(1).max(100),
   customer_phone: z.string().min(5).max(30),
+  car_id: z.string().uuid().optional().nullable(),
 });
 
 // GET /api/bookings/mine — authenticated user's bookings
@@ -22,7 +23,8 @@ router.get('/mine', requireAuth, async (req, res, next) => {
       .select(`
         id, scheduled_at, duration_minutes, status, customer_name, customer_phone,
         service:services(id, title, price_from, price_fixed, duration_minutes),
-        specialist:specialists(id, full_name, photo_url)
+        specialist:specialists(id, full_name, photo_url),
+        car:cars(id, make, model, year, license_plate)
       `)
       .eq('user_id', req.user.sub)
       .order('scheduled_at', { ascending: false });
@@ -45,7 +47,8 @@ router.get('/', async (req, res, next) => {
       .select(`
         id, scheduled_at, duration_minutes, status, customer_name, customer_phone,
         service:services(id, title, price_from, price_fixed, duration_minutes),
-        specialist:specialists(id, full_name, photo_url)
+        specialist:specialists(id, full_name, photo_url),
+        car:cars(id, make, model, year, license_plate)
       `)
       .eq('customer_phone', phone)
       .order('scheduled_at', { ascending: false });
@@ -90,6 +93,17 @@ router.post('/', optionalAuth, async (req, res, next) => {
     });
     if (!free) return res.status(409).json({ error: 'Slot is no longer available' });
 
+    if (body.car_id) {
+      const { data: car, error: carErr } = await supabase
+        .from('cars')
+        .select('id')
+        .eq('id', body.car_id)
+        .eq('user_id', req.user?.sub ?? '')
+        .maybeSingle();
+      if (carErr) throw carErr;
+      if (!car) return res.status(400).json({ error: 'Автомобиль не найден' });
+    }
+
     const { data: booking, error: insertErr } = await supabase
       .from('bookings')
       .insert({
@@ -100,6 +114,7 @@ router.post('/', optionalAuth, async (req, res, next) => {
         customer_name: body.customer_name,
         customer_phone: body.customer_phone,
         user_id: req.user?.sub ?? null,
+        car_id: body.car_id ?? null,
       })
       .select('id,service_id,specialist_id,scheduled_at,duration_minutes,status,created_at')
       .single();
