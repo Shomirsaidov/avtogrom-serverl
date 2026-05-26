@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avtogrom — Бизнес-чат (тест)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #f5f5f5; color: #1a1a1a; height: 100dvh; display: flex;
+         flex-direction: column; }
+
+  /* ── Login ── */
+  #login-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+  #login-box { background: #fff; border-radius: 16px; padding: 40px;
+               width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+  #login-box h1 { font-size: 22px; margin-bottom: 6px; }
+  #login-box p  { font-size: 13px; color: #888; margin-bottom: 24px; }
+  label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; margin-top: 16px; }
+  input[type=email], input[type=password], textarea {
+    width: 100%; padding: 10px 14px; border: 1px solid #ddd;
+    border-radius: 10px; font-size: 15px; outline: none; }
+  input:focus, textarea:focus { border-color: #ff4d06; }
+  .btn { display: block; width: 100%; margin-top: 24px; padding: 12px;
+         background: #ff4d06; color: #fff; border: none; border-radius: 10px;
+         font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: .6; cursor: default; }
+  .btn:hover:not(:disabled) { background: #e63d00; }
+  #login-err { color: #e00; font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+  /* ── App shell ── */
+  #app { flex: 1; display: flex; overflow: hidden; }
+  #app[hidden] { display: none; }
+
+  /* ── Sidebar ── */
+  #sidebar { width: 300px; background: #fff; border-right: 1px solid #e8e8e8;
+             display: flex; flex-direction: column; flex-shrink: 0; }
+  #sidebar-header { padding: 16px; border-bottom: 1px solid #e8e8e8;
+                    display: flex; align-items: center; justify-content: space-between; }
+  #sidebar-header h2 { font-size: 16px; }
+  #refresh-indicator { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
+  #refresh-indicator.active { background: #2e7d32; }
+  #conv-list { flex: 1; overflow-y: auto; }
+  .conv-item { padding: 14px 16px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+               display: flex; gap: 12px; align-items: center; }
+  .conv-item:hover { background: #fafafa; }
+  .conv-item.selected { background: #fff3ef; }
+  .conv-avatar { width: 42px; height: 42px; border-radius: 50%; background: #ffe5db;
+                 display: flex; align-items: center; justify-content: center;
+                 font-weight: 700; color: #ff4d06; font-size: 16px; flex-shrink: 0; }
+  .conv-avatar img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; }
+  .conv-info { flex: 1; min-width: 0; }
+  .conv-name { font-weight: 600; font-size: 14px; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+  .conv-preview { font-size: 12px; color: #888; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .conv-time { font-size: 11px; color: #aaa; flex-shrink: 0; }
+  #no-convs { padding: 32px; text-align: center; color: #aaa; font-size: 14px; }
+
+  /* ── Chat panel ── */
+  #chat-panel { flex: 1; display: flex; flex-direction: column; background: #f5f5f5; }
+  #chat-empty { flex: 1; display: flex; align-items: center; justify-content: center;
+                color: #aaa; font-size: 15px; }
+  #chat-header { padding: 14px 20px; background: #fff; border-bottom: 1px solid #e8e8e8;
+                 display: flex; align-items: center; gap: 12px; }
+  #chat-header-avatar { width: 36px; height: 36px; border-radius: 50%; background: #ffe5db;
+                         display: flex; align-items: center; justify-content: center;
+                         font-weight: 700; color: #ff4d06; }
+  #chat-header-avatar img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+  #chat-name { font-weight: 600; font-size: 15px; }
+  #chat-sub  { font-size: 12px; color: #888; }
+  #poll-badge { margin-left: auto; font-size: 11px; color: #888; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex;
+              flex-direction: column; gap: 8px; }
+  .msg { max-width: 70%; padding: 10px 14px; border-radius: 18px;
+         font-size: 14px; line-height: 1.45; }
+  .msg-client  { align-self: flex-start; background: #fff; border: 1px solid #e8e8e8;
+                 border-bottom-left-radius: 4px; }
+  .msg-business { align-self: flex-end; background: #ff4d06; color: #fff;
+                  border-bottom-right-radius: 4px; }
+  .msg-time { font-size: 11px; opacity: .6; margin-top: 4px; }
+  .msg-date-divider { align-self: center; font-size: 11px; color: #aaa;
+                       background: #f5f5f5; padding: 2px 12px; border-radius: 20px;
+                       border: 1px solid #e8e8e8; }
+
+  #input-bar { padding: 12px 16px; background: #fff; border-top: 1px solid #e8e8e8;
+               display: flex; gap: 10px; align-items: flex-end; }
+  #msg-input { flex: 1; resize: none; border: 1px solid #ddd; border-radius: 12px;
+               padding: 10px 14px; font-size: 14px; max-height: 120px; overflow-y: auto; }
+  #send-btn { padding: 10px 20px; background: #ff4d06; color: #fff; border: none;
+              border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+              white-space: nowrap; }
+  #send-btn:disabled { opacity: .5; cursor: default; }
+  #send-btn:hover:not(:disabled) { background: #e63d00; }
+  #send-err { font-size: 12px; color: #e00; padding: 0 16px 8px; }
+</style>
+</head>
+<body>
+
+<!-- ── Login ───────────────────────────────────────── -->
+<div id="login-wrap">
+  <div id="login-box">
+    <h1>Бизнес-чат</h1>
+    <p>Войдите как администратор, чтобы отвечать клиентам</p>
+    <label for="email">Email</label>
+    <input id="email" type="email" placeholder="admin@example.com" autocomplete="email">
+    <label for="password">Пароль</label>
+    <input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+    <button class="btn" id="login-btn">Войти</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── App ─────────────────────────────────────────── -->
+<div id="app" hidden>
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h2>Чаты клиентов</h2>
+      <div id="refresh-indicator" title="Обновление…"></div>
+    </div>
+    <div id="conv-list"></div>
+  </div>
+
+  <div id="chat-panel">
+    <div id="chat-empty">Выберите беседу слева</div>
+
+    <div id="chat-main" hidden style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <div id="chat-header">
+        <div id="chat-header-avatar"></div>
+        <div>
+          <div id="chat-name"></div>
+          <div id="chat-sub"></div>
+        </div>
+        <div id="poll-badge">⟳ опрос каждые 6 с</div>
+      </div>
+      <div id="messages"></div>
+      <div id="send-err"></div>
+      <div id="input-bar">
+        <textarea id="msg-input" rows="1" placeholder="Ответить клиенту…"></textarea>
+        <button id="send-btn">Отправить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+const POLL_CONV_MS  = 8000;
+const POLL_MSG_MS   = 6000;
+
+let token      = localStorage.getItem('admin_token') || null;
+let activeConv = null;   // full conversation object
+let lastTs     = null;   // ISO of last received message (for incremental poll)
+let msgTimer   = null;
+let convTimer  = null;
+
+// ── helpers ──────────────────────────────────────────────────────────
+
+function authHeader() { return { 'Authorization': `Bearer ${token}` }; }
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(opts.headers || {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+}
+function formatDate(iso) {
+  const d   = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Сегодня';
+  const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'Вчера';
+  return d.toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+}
+
+// ── conversation list ─────────────────────────────────────────────────
+
+let convs = [];
+
+async function loadConvs() {
+  try {
+    const data = await apiFetch('/api/conversations');
+    convs = data.conversations || [];
+    renderConvList();
+    pulse();
+  } catch(e) { console.warn('conv poll error', e.message); }
+}
+
+function pulse() {
+  const el = document.getElementById('refresh-indicator');
+  el.classList.add('active');
+  setTimeout(() => el.classList.remove('active'), 600);
+}
+
+function renderConvList() {
+  const el = document.getElementById('conv-list');
+  if (!convs.length) {
+    el.innerHTML = '<div id="no-convs">Нет активных чатов.<br>Клиент должен написать первым.</div>';
+    return;
+  }
+  el.innerHTML = convs.map(c => {
+    const isActive = activeConv && activeConv.id === c.id;
+    const name     = c.specialist?.full_name || 'Клиент';
+    const photo    = c.specialist?.photo_url;
+    const sender   = c.last_message_sender === 'client' ? '👤 ' : '🏢 ';
+    const preview  = c.last_message_body
+      ? sender + c.last_message_body
+      : 'Нет сообщений';
+    const time     = c.last_message_at ? formatTime(c.last_message_at) : '';
+
+    // Avatar: specialist photo or initial
+    const avatarHtml = photo
+      ? `<img src="${escHtml(photo)}" alt="">`
+      : escHtml((name)[0].toUpperCase());
+
+    return `<div class="conv-item ${isActive ? 'selected' : ''}" data-id="${c.id}">
+      <div class="conv-avatar">${avatarHtml}</div>
+      <div class="conv-info">
+        <div class="conv-name">${escHtml(name)}</div>
+        <div class="conv-preview">${escHtml(preview)}</div>
+      </div>
+      <div class="conv-time">${escHtml(time)}</div>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.conv-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const conv = convs.find(c => c.id === item.dataset.id);
+      if (conv) selectConv(conv);
+    });
+  });
+}
+
+// ── chat panel ────────────────────────────────────────────────────────
+
+function selectConv(conv) {
+  activeConv = conv;
+  lastTs     = null;
+
+  clearInterval(msgTimer);
+  renderConvList(); // highlight selected
+
+  // header
+  const name  = conv.specialist?.full_name || 'Клиент';
+  const photo = conv.specialist?.photo_url;
+  document.getElementById('chat-name').textContent = name;
+  document.getElementById('chat-sub').textContent  = 'Специалист';
+  const avatarEl = document.getElementById('chat-header-avatar');
+  avatarEl.innerHTML = photo
+    ? `<img src="${escHtml(photo)}" alt="">`
+    : escHtml(name[0].toUpperCase());
+
+  document.getElementById('chat-empty').hidden = true;
+  const main = document.getElementById('chat-main');
+  main.hidden = false;
+  main.style.display = 'flex';
+
+  document.getElementById('messages').innerHTML = '';
+  document.getElementById('send-err').textContent = '';
+
+  loadMsgs(true);
+  msgTimer = setInterval(() => loadMsgs(false), POLL_MSG_MS);
+}
+
+let renderedDates = new Set();
+
+async function loadMsgs(initial) {
+  if (!activeConv) return;
+  try {
+    const qs   = lastTs ? `?after=${encodeURIComponent(lastTs)}` : '';
+    const data = await apiFetch(`/api/conversations/${activeConv.id}/messages${qs}`);
+    const msgs = data.messages || [];
+    if (!msgs.length) return;
+
+    if (initial) {
+      renderedDates = new Set();
+      document.getElementById('messages').innerHTML = '';
+    }
+
+    msgs.forEach(m => appendMsg(m));
+    lastTs = msgs[msgs.length - 1].created_at;
+    scrollToBottom();
+    pulse();
+  } catch(e) { console.warn('msg poll error', e.message); }
+}
+
+function appendMsg(msg) {
+  const container = document.getElementById('messages');
+  const dateKey   = new Date(msg.created_at).toDateString();
+
+  if (!renderedDates.has(dateKey)) {
+    renderedDates.add(dateKey);
+    const div = document.createElement('div');
+    div.className = 'msg-date-divider';
+    div.textContent = formatDate(msg.created_at);
+    container.appendChild(div);
+  }
+
+  const div = document.createElement('div');
+  div.className = `msg msg-${msg.sender_role}`;
+  div.innerHTML = `<div>${escHtml(msg.body)}</div>
+    <div class="msg-time">${formatTime(msg.created_at)}</div>`;
+  container.appendChild(div);
+}
+
+function scrollToBottom() {
+  const el = document.getElementById('messages');
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── send ──────────────────────────────────────────────────────────────
+
+async function sendMsg() {
+  const input  = document.getElementById('msg-input');
+  const errEl  = document.getElementById('send-err');
+  const sendBtn = document.getElementById('send-btn');
+  const text   = input.value.trim();
+  if (!text || !activeConv) return;
+
+  input.value  = '';
+  sendBtn.disabled = true;
+  errEl.textContent = '';
+
+  try {
+    const data = await apiFetch(`/api/conversations/${activeConv.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ body: text }),
+    });
+    appendMsg(data.message);
+    lastTs = data.message.created_at;
+    scrollToBottom();
+
+    // reflect preview in sidebar
+    const conv = convs.find(c => c.id === activeConv.id);
+    if (conv) {
+      conv.last_message_body   = text;
+      conv.last_message_sender = 'business';
+      conv.last_message_at     = data.message.created_at;
+      renderConvList();
+    }
+  } catch(e) {
+    input.value = text; // restore on error
+    errEl.textContent = e.message;
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+// ── login ─────────────────────────────────────────────────────────────
+
+async function tryLogin() {
+  const email    = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errEl    = document.getElementById('login-err');
+  const btn      = document.getElementById('login-btn');
+
+  errEl.textContent = '';
+  btn.disabled = true;
+
+  try {
+    const data = await fetch(`${API}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }).then(r => r.json().then(d => ({ ok: r.ok, ...d })));
+
+    if (!data.ok) throw new Error(data.error || 'Ошибка входа');
+
+    const role = data.user?.role;
+    if (!['admin', 'moderator', 'system_admin', 'master'].includes(role)) {
+      throw new Error(`Эта панель только для администраторов. Ваша роль: ${role}`);
+    }
+
+    token = data.token;
+    localStorage.setItem('admin_token', token);
+    showApp();
+  } catch(e) {
+    errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showApp() {
+  document.getElementById('login-wrap').hidden = true;
+  document.getElementById('app').hidden = false;
+  loadConvs();
+  convTimer = setInterval(loadConvs, POLL_CONV_MS);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── bootstrap ─────────────────────────────────────────────────────────
+
+document.getElementById('login-btn').addEventListener('click', tryLogin);
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryLogin();
+});
+
+document.getElementById('send-btn').addEventListener('click', sendMsg);
+document.getElementById('msg-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+});
+
+// Auto-restore session
+if (token) {
+  // Verify token is still valid before showing app
+  apiFetch('/api/auth/me')
+    .then(data => {
+      const role = data.user?.role;
+      if (['admin', 'moderator', 'system_admin', 'master'].includes(role)) {
+        showApp();
+      } else {
+        localStorage.removeItem('admin_token');
+        token = null;
+      }
+    })
+    .catch(() => {
+      localStorage.removeItem('admin_token');
+      token = null;
+    });
+}
+</script>
+</body>
+</html>
