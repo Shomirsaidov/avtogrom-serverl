@@ -3,12 +3,17 @@ import { supabase } from '../supabase.js';
 
 const router = Router();
 
-router.get('/', async (_req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
-    const { data, error } = await supabase
+    const search = req.query.search?.trim();
+    let query = supabase
       .from('services')
       .select('id,title,description,price_from,price_fixed,duration_minutes,photo_url')
       .order('title', { ascending: true });
+    if (search) {
+      query = query.ilike('title', `%${search}%`);
+    }
+    const { data, error } = await query;
     if (error) throw error;
     res.json({ services: data });
   } catch (err) {
