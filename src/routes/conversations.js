@@ -9,25 +9,46 @@ const sendSchema = z.object({
   body: z.string().min(1).max(2000),
 });
 
+const createSchema = z.object({
+  specialist_id: z.string().uuid('Укажите корректный идентификатор специалиста'),
+});
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-async function getOrCreateConversation(userId) {
+// Fetch a single conversation row joined with its specialist — used in responses.
+async function fetchConversationWithSpecialist(id) {
+  const { data, error } = await supabase
+    .from('conversations')
+    .select(`
+      id, user_id, specialist_id,
+      last_message_at, last_message_body, last_message_sender,
+      created_at,
+      specialist:specialists(id, full_name, photo_url)
+    `)
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+async function getOrCreateConversation(userId, specialistId) {
   const { data: existing } = await supabase
     .from('conversations')
-    .select('*')
+    .select('id')
     .eq('user_id', userId)
+    .eq('specialist_id', specialistId)
     .maybeSingle();
 
-  if (existing) return existing;
+  if (existing) return fetchConversationWithSpecialist(existing.id);
 
   const { data, error } = await supabase
     .from('conversations')
-    .insert({ user_id: userId })
-    .select()
+    .insert({ user_id: userId, specialist_id: specialistId })
+    .select('id')
     .single();
 
   if (error) throw error;
-  return data;
+  return fetchConversationWithSpecialist(data.id);
 }
 
 function hasAccess(conv, userId, userRole) {
@@ -38,15 +59,20 @@ function hasAccess(conv, userId, userRole) {
 // ── routes ────────────────────────────────────────────────────────────────────
 
 // GET /api/conversations
-// Client → their single conversation row.
-// Staff (future business app) → all conversations.
+// Client → their conversations (one per specialist they've chatted with).
+// Staff → all conversations (for future business app).
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
 
     let query = supabase
       .from('conversations')
-      .select('id, user_id, last_message_at, last_message_body, last_message_sender, created_at')
+      .select(`
+        id, user_id, specialist_id,
+        last_message_at, last_message_body, last_message_sender,
+        created_at,
+        specialist:specialists(id, full_name, photo_url)
+      `)
       .order('last_message_at', { ascending: false, nullsFirst: false });
 
     if (!isStaff) query = query.eq('user_id', req.user.sub);
@@ -60,10 +86,15 @@ router.get('/', requireAuth, async (req, res, next) => {
   }
 });
 
-// POST /api/conversations — idempotent create-or-get
+// POST /api/conversations — idempotent: creates or returns existing thread for (user, specialist)
 router.post('/', requireAuth, async (req, res, next) => {
   try {
-    const conv = await getOrCreateConversation(req.user.sub);
+    const parsed = createSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0].message });
+    }
+
+    const conv = await getOrCreateConversation(req.user.sub, parsed.data.specialist_id);
     res.json({ conversation: conv });
   } catch (err) {
     next(err);
@@ -71,7 +102,6 @@ router.post('/', requireAuth, async (req, res, next) => {
 });
 
 // GET /api/conversations/:id/messages?after=<ISO>&limit=<n>
-// Incremental polling: only rows with created_at > after are returned.
 router.get('/:id/messages', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -141,7 +171,6 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
 
     if (msgErr) throw msgErr;
 
-    // Denormalise preview columns so the list query stays a single-table read
     await supabase
       .from('conversations')
       .update({
