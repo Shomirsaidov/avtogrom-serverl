@@ -7,6 +7,7 @@ import authRouter from './routes/auth.js';
 import servicesRouter from './routes/services.js';
 import specialistsRouter from './routes/specialists.js';
 import bookingsRouter from './routes/bookings.js';
+import conversationsRouter from './routes/conversations.js';
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/services', servicesRouter);
 app.use('/api/specialists', specialistsRouter);
 app.use('/api/bookings', bookingsRouter);
+app.use('/api/conversations', conversationsRouter);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
