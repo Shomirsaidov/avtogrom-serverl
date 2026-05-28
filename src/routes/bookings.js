@@ -213,4 +213,36 @@ router.patch('/:id/reschedule', requireAuth, async (req, res, next) => {
   }
 });
 
+// DELETE /api/bookings/:id — only completed or cancelled bookings
+router.delete('/:id', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const { data: booking, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('id, status, user_id')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!booking) return res.status(404).json({ error: 'Запись не найдена' });
+    if (booking.user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+    if (!['completed', 'cancelled'].includes(booking.status)) {
+      return res.status(409).json({ error: 'Нельзя удалить активную запись' });
+    }
+
+    const { error: deleteErr } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', id);
+
+    if (deleteErr) throw deleteErr;
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
