@@ -160,8 +160,8 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
-    const senderRole = isStaff ? 'business' : 'client';
+    const isOwner = conv.user_id === req.user.sub;
+    const senderRole = isOwner ? 'client' : 'business';
 
     const { data: msg, error: msgErr } = await supabase
       .from('messages')
