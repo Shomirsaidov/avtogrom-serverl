@@ -160,4 +160,57 @@ router.patch('/:id/cancel', requireAuth, async (req, res, next) => {
   }
 });
 
+// PATCH /api/bookings/:id/reschedule
+const rescheduleSchema = z.object({
+  scheduled_at: z.string().datetime(),
+});
+
+router.patch('/:id/reschedule', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const parsed = rescheduleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Укажите новую дату и время' });
+    }
+
+    const { data: booking, error: fetchErr } = await supabase
+      .from('bookings')
+      .select('id, status, user_id, specialist_id, duration_minutes')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+    if (!booking) return res.status(404).json({ error: 'Запись не найдена' });
+    if (booking.user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+    if (!['pending', 'confirmed'].includes(booking.status)) {
+      return res.status(409).json({ error: 'Эту запись нельзя перенести' });
+    }
+
+    const free = await isSlotStillFree({
+      specialistId: booking.specialist_id,
+      scheduledAt: parsed.data.scheduled_at,
+      durationMinutes: booking.duration_minutes,
+    });
+    if (!free) return res.status(409).json({ error: 'Это время уже занято' });
+
+    const { data: updated, error: updateErr } = await supabase
+      .from('bookings')
+      .update({
+        scheduled_at: parsed.data.scheduled_at,
+        status: 'pending',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+    res.json({ booking: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
