@@ -354,13 +354,6 @@ function appendMsg(msg) {
   container.appendChild(div);
 }
 
-  const div = document.createElement('div');
-  div.className = `msg msg-${msg.sender_role}`;
-  div.innerHTML = `<div>${escHtml(msg.body)}</div>
-    <div class="msg-time">${formatTime(msg.created_at)}</div>`;
-  container.appendChild(div);
-}
-
 function scrollToBottom() {
   const el = document.getElementById('messages');
   el.scrollTop = el.scrollHeight;
