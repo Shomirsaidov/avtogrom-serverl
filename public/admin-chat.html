@@ -96,9 +96,9 @@
                        border: 1px solid #e8e8e8; }
   .msg-photo { max-width: 220px; max-height: 200px; border-radius: 8px;
                display: block; cursor: pointer; margin-bottom: 4px; }
-  .msg-file a { text-decoration: none; color: #2057DF; font-size: 13px;
+  .msg-file a { text-decoration: underline; color: #2057DF; font-size: 13px;
                 display: inline-flex; align-items: center; gap: 4px;
-                padding: 4px 0; word-break: break-all; }
+                padding: 4px 0; word-break: break-all; cursor: pointer; }
 
   #input-bar { padding: 12px 16px; background: #fff; border-top: 1px solid #e8e8e8;
                display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; flex-wrap: wrap; }
@@ -360,11 +360,11 @@ function appendMsg(msg) {
   let html = '';
   if (msg.file_url) {
     const fname = msg.file_name || 'Файл';
-    html += `<div class="msg-file"><a href="${escHtml(msg.file_url)}" target="_blank" download="${escHtml(fname)}">📎 ${escHtml(fname)}</a></div>`;
+    html += `<div class="msg-file"><a href="${escHtml(msg.file_url)}" target="_blank">📎 ${escHtml(fname)}</a></div>`;
   } else if (msg.photo_url) {
     html += `<img class="msg-photo" src="${escHtml(msg.photo_url)}" loading="lazy" onclick="window.open('${escHtml(msg.photo_url)}','_blank')">`;
   }
-  if (msg.body && msg.body !== 'Фото' && !msg.file_url) {
+  if (msg.body && !msg.body.startsWith('📄') && msg.body !== 'Фото') {
     html += `<div>${escHtml(msg.body)}</div>`;
   }
   html += `<div class="msg-time">${formatTime(msg.created_at)}</div>`;
