@@ -37,6 +37,9 @@
   /* ── Sidebar ── */
   #sidebar { width: 300px; background: #fff; border-right: 1px solid #e8e8e8;
              display: flex; flex-direction: column; flex-shrink: 0; min-height: 0; }
+  #specialist-filter { margin: 8px 12px; padding: 6px 10px; border: 1px solid #ddd;
+                       border-radius: 8px; font-size: 13px; background: #fff;
+                       flex-shrink: 0; }
   #sidebar-header { padding: 16px; border-bottom: 1px solid #e8e8e8;
                     display: flex; align-items: center; justify-content: space-between;
                     flex-shrink: 0; }
@@ -57,6 +60,7 @@
                overflow: hidden; text-overflow: ellipsis; }
   .conv-preview { font-size: 12px; color: #888; white-space: nowrap;
                   overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .conv-master { font-size: 11px; color: #aaa; margin-top: 1px; }
   .conv-time { font-size: 11px; color: #aaa; flex-shrink: 0; }
   #no-convs { padding: 32px; text-align: center; color: #aaa; font-size: 14px; }
 
@@ -128,6 +132,7 @@
       <h2>Чаты клиентов</h2>
       <div id="refresh-indicator" title="Обновление…"></div>
     </div>
+    <select id="specialist-filter"><option value="">Все специалисты</option></select>
     <div id="conv-list"></div>
   </div>
 
@@ -194,11 +199,27 @@ function formatDate(iso) {
 // ── conversation list ─────────────────────────────────────────────────
 
 let convs = [];
+let specialists = [];
+
+function buildSpecialistList() {
+  const map = new Map();
+  convs.forEach(c => {
+    const s = c.specialist;
+    if (s && !map.has(s.id)) map.set(s.id, s);
+  });
+  specialists = Array.from(map.values());
+  const sel = document.getElementById('specialist-filter');
+  const active = sel.value;
+  sel.innerHTML = '<option value="">Все специалисты</option>' +
+    specialists.map(s => `<option value="${s.id}">${escHtml(s.full_name)}</option>`).join('');
+  sel.value = active || '';
+}
 
 async function loadConvs() {
   try {
     const data = await apiFetch('/api/conversations');
     convs = data.conversations || [];
+    buildSpecialistList();
     renderConvList();
     pulse();
   } catch(e) { console.warn('conv poll error', e.message); }
@@ -210,31 +231,39 @@ function pulse() {
   setTimeout(() => el.classList.remove('active'), 600);
 }
 
+let filterSpecialistId = '';
+
+document.getElementById('specialist-filter').addEventListener('change', function() {
+  filterSpecialistId = this.value;
+  renderConvList();
+});
+
 function renderConvList() {
   const el = document.getElementById('conv-list');
-  if (!convs.length) {
+  let filtered = convs;
+  if (filterSpecialistId) {
+    filtered = convs.filter(c => c.specialist_id === filterSpecialistId);
+  }
+  if (!filtered.length) {
     el.innerHTML = '<div id="no-convs">Нет активных чатов.<br>Клиент должен написать первым.</div>';
     return;
   }
-  el.innerHTML = convs.map(c => {
+  el.innerHTML = filtered.map(c => {
     const isActive = activeConv && activeConv.id === c.id;
-    const name     = c.specialist?.full_name || 'Клиент';
-    const photo    = c.specialist?.photo_url;
+    const clientName = c.client?.name || 'Клиент';
+    const masterName = c.specialist?.full_name || '';
     const sender   = c.last_message_sender === 'client' ? '👤 ' : '🏢 ';
     const preview  = c.last_message_body
       ? sender + c.last_message_body
       : 'Нет сообщений';
     const time     = c.last_message_at ? formatTime(c.last_message_at) : '';
-
-    // Avatar: specialist photo or initial
-    const avatarHtml = photo
-      ? `<img src="${escHtml(photo)}" alt="">`
-      : escHtml((name)[0].toUpperCase());
+    const initial  = (clientName[0] || '?').toUpperCase();
 
     return `<div class="conv-item ${isActive ? 'selected' : ''}" data-id="${c.id}">
-      <div class="conv-avatar">${avatarHtml}</div>
+      <div class="conv-avatar">${escHtml(initial)}</div>
       <div class="conv-info">
-        <div class="conv-name">${escHtml(name)}</div>
+        <div class="conv-name">${escHtml(clientName)}</div>
+        <div class="conv-master">${escHtml(masterName)}</div>
         <div class="conv-preview">${escHtml(preview)}</div>
       </div>
       <div class="conv-time">${escHtml(time)}</div>
@@ -258,15 +287,13 @@ function selectConv(conv) {
   clearInterval(msgTimer);
   renderConvList(); // highlight selected
 
-  // header
-  const name  = conv.specialist?.full_name || 'Клиент';
-  const photo = conv.specialist?.photo_url;
-  document.getElementById('chat-name').textContent = name;
-  document.getElementById('chat-sub').textContent  = 'Специалист';
+  // header — show client name, specialist as subtitle
+  const clientName = conv.client?.name || 'Клиент';
+  const masterName = conv.specialist?.full_name || '';
+  document.getElementById('chat-name').textContent = clientName;
+  document.getElementById('chat-sub').textContent  = masterName ? `Мастер: ${masterName}` : '';
   const avatarEl = document.getElementById('chat-header-avatar');
-  avatarEl.innerHTML = photo
-    ? `<img src="${escHtml(photo)}" alt="">`
-    : escHtml(name[0].toUpperCase());
+  avatarEl.innerHTML = (clientName[0] || '?').toUpperCase();
 
   document.getElementById('chat-empty').classList.add('hidden');
   document.getElementById('chat-main').classList.add('visible');

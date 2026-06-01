@@ -21,7 +21,7 @@ const createSchema = z.object({
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-// Fetch a single conversation row joined with its specialist — used in responses.
+// Fetch a single conversation row joined with its specialist and client — used in responses.
 async function fetchConversationWithSpecialist(id) {
   const { data, error } = await supabase
     .from('conversations')
@@ -29,7 +29,8 @@ async function fetchConversationWithSpecialist(id) {
       id, user_id, specialist_id,
       last_message_at, last_message_body, last_message_sender,
       created_at,
-      specialist:specialists(id, full_name, photo_url)
+      specialist:specialists(id, full_name, photo_url),
+      client:users(id, name)
     `)
     .eq('id', id)
     .single();
@@ -77,7 +78,8 @@ router.get('/', requireAuth, async (req, res, next) => {
         id, user_id, specialist_id,
         last_message_at, last_message_body, last_message_sender,
         created_at,
-        specialist:specialists(id, full_name, photo_url)
+        specialist:specialists(id, full_name, photo_url),
+        client:users(id, name)
       `)
       .order('last_message_at', { ascending: false, nullsFirst: false });
 
