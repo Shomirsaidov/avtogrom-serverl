@@ -9,6 +9,7 @@ const router = Router();
 const sendSchema = z.object({
   body: z.string().min(1).max(2000).optional(),
   photo_base64: z.string().optional(),
+  sender_role: z.enum(['client', 'business']).optional(),
 }).refine(
   data => data.body || data.photo_base64,
   { message: 'Укажите текст сообщения или прикрепите фото' },
@@ -166,7 +167,8 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
     }
 
     const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
-    const senderRole = isStaff ? 'business' : (conv.user_id === req.user.sub ? 'client' : 'business');
+    let senderRole = conv.user_id === req.user.sub ? 'client' : 'business';
+    if (isStaff && parsed.data.sender_role) senderRole = parsed.data.sender_role;
 
     let photoUrl = null;
     if (parsed.data.photo_base64) {
