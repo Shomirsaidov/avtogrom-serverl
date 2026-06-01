@@ -170,9 +170,16 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
+    // sender_role logic (permanent — do not change without understanding all 3 cases):
+    // 1. regular client in mobile app → never sends sender_role → ownership check gives 'client'
+    // 2. staff (admin) in mobile app → never sends sender_role → ownership check gives 'client'
+    // 3. staff in admin-chat.html → sends sender_role:'business' → override to 'business'
     const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
-    let senderRole = conv.user_id === req.user.sub ? 'client' : 'business';
-    if (isStaff && parsed.data.sender_role) senderRole = parsed.data.sender_role;
+    const isConvOwner = conv.user_id === req.user.sub;
+    let senderRole = isConvOwner ? 'client' : 'business';
+    if (parsed.data.sender_role === 'business' && isStaff) {
+      senderRole = 'business';
+    }
 
     let photoUrl = null;
     let fileUrl = null;
