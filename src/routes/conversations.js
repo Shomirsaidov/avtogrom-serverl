@@ -2,12 +2,17 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const router = Router();
 
 const sendSchema = z.object({
-  body: z.string().min(1).max(2000),
-});
+  body: z.string().min(1).max(2000).optional(),
+  photo_base64: z.string().optional(),
+}).refine(
+  data => data.body || data.photo_base64,
+  { message: 'Укажите текст сообщения или прикрепите фото' },
+);
 
 const createSchema = z.object({
   specialist_id: z.string().uuid('Укажите корректный идентификатор специалиста'),
@@ -122,7 +127,7 @@ router.get('/:id/messages', requireAuth, async (req, res, next) => {
 
     let query = supabase
       .from('messages')
-      .select('id, conversation_id, sender_role, body, created_at')
+      .select('id, conversation_id, sender_role, body, photo_url, created_at')
       .eq('conversation_id', id)
       .order('created_at', { ascending: true })
       .limit(limit);
@@ -145,7 +150,7 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
 
     const parsed = sendSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Текст сообщения не может быть пустым' });
+      return res.status(400).json({ error: parsed.error.issues[0].message || 'Некорректное сообщение' });
     }
 
     const { data: conv, error: convErr } = await supabase
@@ -163,19 +168,36 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
     const isOwner = conv.user_id === req.user.sub;
     const senderRole = isOwner ? 'client' : 'business';
 
+    let photoUrl = null;
+    if (parsed.data.photo_base64) {
+      const uploadResult = await uploadToCloudinary(parsed.data.photo_base64, {
+        folder: 'avtogrom/chat',
+      });
+      photoUrl = uploadResult.url;
+    }
+
+    const msgBody = parsed.data.body || (photoUrl ? 'Фото' : '');
+
     const { data: msg, error: msgErr } = await supabase
       .from('messages')
-      .insert({ conversation_id: id, sender_role: senderRole, body: parsed.data.body })
-      .select('id, conversation_id, sender_role, body, created_at')
+      .insert({
+        conversation_id: id,
+        sender_role: senderRole,
+        body: msgBody,
+        photo_url: photoUrl,
+      })
+      .select('id, conversation_id, sender_role, body, photo_url, created_at')
       .single();
 
     if (msgErr) throw msgErr;
+
+    const preview = photoUrl ? '📷 Фото' : msgBody;
 
     await supabase
       .from('conversations')
       .update({
         last_message_at: msg.created_at,
-        last_message_body: parsed.data.body,
+        last_message_body: preview,
         last_message_sender: senderRole,
       })
       .eq('id', id);

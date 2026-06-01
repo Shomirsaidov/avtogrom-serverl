@@ -8,6 +8,7 @@ const router = Router();
 const upsertCarSchema = z.object({
   make: z.string().min(1).max(100),
   model: z.string().min(1).max(100),
+  vincode: z.string().max(17).optional().nullable(),
   year: z.number().int().min(1900).max(2100).optional().nullable(),
   license_plate: z.string().max(20).optional().nullable(),
 });
@@ -16,7 +17,7 @@ router.get('/', requireAuth, async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from('cars')
-      .select('id, make, model, year, license_plate, created_at')
+      .select('id, make, model, vincode, year, license_plate, created_at')
       .eq('user_id', req.user.sub)
       .order('created_at', { ascending: false });
 
@@ -41,10 +42,11 @@ router.post('/', requireAuth, async (req, res, next) => {
         user_id: req.user.sub,
         make: body.make,
         model: body.model,
+        vincode: body.vincode ?? null,
         year: body.year ?? null,
         license_plate: body.license_plate ?? null,
       })
-      .select('id, make, model, year, license_plate, created_at')
+      .select('id, make, model, vincode, year, license_plate, created_at')
       .single();
 
     if (error) throw error;
@@ -81,12 +83,13 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
       .update({
         make: body.make,
         model: body.model,
+        vincode: body.vincode ?? null,
         year: body.year ?? null,
         license_plate: body.license_plate ?? null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .select('id, make, model, year, license_plate, created_at')
+      .select('id, make, model, vincode, year, license_plate, created_at')
       .single();
 
     if (updateErr) throw updateErr;
