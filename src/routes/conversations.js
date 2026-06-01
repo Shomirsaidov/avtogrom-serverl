@@ -186,12 +186,13 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
     let fileName = null;
 
     if (parsed.data.file_base64) {
+      const fname = parsed.data.file_name || 'Файл';
       const uploadResult = await uploadToCloudinary(parsed.data.file_base64, {
         folder: 'avtogrom/chat',
-        resource_type: 'raw',
+        resource_type: 'auto',
       });
       fileUrl = uploadResult.url;
-      fileName = parsed.data.file_name || 'Файл';
+      fileName = fname;
     } else if (parsed.data.photo_base64) {
       const uploadResult = await uploadToCloudinary(parsed.data.photo_base64, {
         folder: 'avtogrom/chat',
