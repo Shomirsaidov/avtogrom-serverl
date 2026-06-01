@@ -96,9 +96,21 @@
                        border: 1px solid #e8e8e8; }
   .msg-photo { max-width: 220px; max-height: 200px; border-radius: 8px;
                display: block; cursor: pointer; margin-bottom: 4px; }
+  .msg-file a { text-decoration: none; color: #2057DF; font-size: 13px;
+                display: inline-flex; align-items: center; gap: 4px;
+                padding: 4px 0; word-break: break-all; }
 
   #input-bar { padding: 12px 16px; background: #fff; border-top: 1px solid #e8e8e8;
-               display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; }
+               display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; flex-wrap: wrap; }
+  #file-btn { background: none; border: 1px solid #ddd; border-radius: 8px;
+              padding: 6px 10px; font-size: 18px; cursor: pointer; flex-shrink: 0;
+              line-height: 1; margin-bottom: 0; }
+  #file-btn:hover { border-color: #ff4d06; }
+  #file-preview { width: 100%; font-size: 12px; color: #555;
+                  padding: 4px 8px; background: #f9f9f9; border-radius: 6px;
+                  display: flex; align-items: center; gap: 6px; }
+  #file-preview .remove-file { margin-left: auto; cursor: pointer; color: #e00;
+                                font-weight: bold; font-size: 14px; }
   #msg-input { flex: 1; resize: none; border: 1px solid #ddd; border-radius: 12px;
                padding: 10px 14px; font-size: 14px; max-height: 120px; overflow-y: auto; }
   #send-btn { padding: 10px 20px; background: #ff4d06; color: #fff; border: none;
@@ -151,6 +163,9 @@
       <div id="messages"></div>
       <div id="send-err"></div>
       <div id="input-bar">
+        <input type="file" id="file-input" multiple style="display:none" accept="*/*">
+        <button id="file-btn" title="Прикрепить файл">📎</button>
+        <div id="file-preview" style="display:none"></div>
         <textarea id="msg-input" rows="1" placeholder="Ответить клиенту…"></textarea>
         <button id="send-btn">Отправить</button>
       </div>
@@ -343,10 +358,13 @@ function appendMsg(msg) {
   div.className = `msg msg-${msg.sender_role}`;
 
   let html = '';
-  if (msg.photo_url) {
+  if (msg.file_url) {
+    const fname = msg.file_name || 'Файл';
+    html += `<div class="msg-file"><a href="${escHtml(msg.file_url)}" target="_blank" download="${escHtml(fname)}">📎 ${escHtml(fname)}</a></div>`;
+  } else if (msg.photo_url) {
     html += `<img class="msg-photo" src="${escHtml(msg.photo_url)}" loading="lazy" onclick="window.open('${escHtml(msg.photo_url)}','_blank')">`;
   }
-  if (msg.body && msg.body !== 'Фото') {
+  if (msg.body && msg.body !== 'Фото' && !msg.file_url) {
     html += `<div>${escHtml(msg.body)}</div>`;
   }
   html += `<div class="msg-time">${formatTime(msg.created_at)}</div>`;
@@ -359,23 +377,57 @@ function scrollToBottom() {
   el.scrollTop = el.scrollHeight;
 }
 
+// ── file picker ────────────────────────────────────────────────────────
+
+let pendingFile = null;
+
+document.getElementById('file-btn').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+
+document.getElementById('file-input').addEventListener('change', function() {
+  const file = this.files?.[0];
+  if (!file) return;
+  pendingFile = file;
+  const preview = document.getElementById('file-preview');
+  preview.style.display = 'flex';
+  preview.innerHTML = `<span>📎 ${escHtml(file.name)}</span>
+    <span class="remove-file" onclick="pendingFile=null;this.parentElement.style.display='none'">✕</span>`;
+});
+
 // ── send ──────────────────────────────────────────────────────────────
 
 async function sendMsg() {
-  const input  = document.getElementById('msg-input');
-  const errEl  = document.getElementById('send-err');
+  const input   = document.getElementById('msg-input');
+  const errEl   = document.getElementById('send-err');
   const sendBtn = document.getElementById('send-btn');
-  const text   = input.value.trim();
-  if (!text || !activeConv) return;
+  const text    = input.value.trim();
+  if (!text && !pendingFile || !activeConv) return;
 
-  input.value  = '';
   sendBtn.disabled = true;
   errEl.textContent = '';
+
+  let payload = { sender_role: 'business' };
+  if (text) payload.body = text;
+  if (pendingFile) {
+    const reader = new FileReader();
+    payload.file_base64 = await new Promise((resolve, reject) => {
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(pendingFile);
+    });
+    payload.file_name = pendingFile.name;
+  }
+
+  input.value = '';
+  const sentFile = pendingFile;
+  pendingFile = null;
+  document.getElementById('file-preview').style.display = 'none';
 
   try {
     const data = await apiFetch(`/api/conversations/${activeConv.id}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ body: text, sender_role: 'business' }),
+      body: JSON.stringify(payload),
     });
     appendMsg(data.message);
     lastTs = data.message.created_at;
@@ -384,13 +436,17 @@ async function sendMsg() {
     // reflect preview in sidebar
     const conv = convs.find(c => c.id === activeConv.id);
     if (conv) {
-      conv.last_message_body   = text;
+      const preview = data.message.file_url
+        ? '📄 ' + (data.message.file_name || 'Файл')
+        : data.message.body || '';
+      conv.last_message_body   = preview;
       conv.last_message_sender = 'business';
       conv.last_message_at     = data.message.created_at;
       renderConvList();
     }
   } catch(e) {
     input.value = text; // restore on error
+    if (sentFile) pendingFile = sentFile;
     errEl.textContent = e.message;
   } finally {
     sendBtn.disabled = false;

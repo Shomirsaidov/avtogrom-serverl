@@ -9,10 +9,12 @@ const router = Router();
 const sendSchema = z.object({
   body: z.string().min(1).max(2000).optional(),
   photo_base64: z.string().optional(),
+  file_base64: z.string().optional(),
+  file_name: z.string().max(255).optional(),
   sender_role: z.enum(['client', 'business']).optional(),
 }).refine(
-  data => data.body || data.photo_base64,
-  { message: 'Укажите текст сообщения или прикрепите фото' },
+  data => data.body || data.photo_base64 || data.file_base64,
+  { message: 'Укажите текст сообщения или прикрепите файл' },
 );
 
 const createSchema = z.object({
@@ -130,7 +132,7 @@ router.get('/:id/messages', requireAuth, async (req, res, next) => {
 
     let query = supabase
       .from('messages')
-      .select('id, conversation_id, sender_role, body, photo_url, created_at')
+      .select('id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at')
       .eq('conversation_id', id)
       .order('created_at', { ascending: true })
       .limit(limit);
@@ -173,14 +175,24 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
     if (isStaff && parsed.data.sender_role) senderRole = parsed.data.sender_role;
 
     let photoUrl = null;
-    if (parsed.data.photo_base64) {
+    let fileUrl = null;
+    let fileName = null;
+
+    if (parsed.data.file_base64) {
+      const uploadResult = await uploadToCloudinary(parsed.data.file_base64, {
+        folder: 'avtogrom/chat',
+        resource_type: 'raw',
+      });
+      fileUrl = uploadResult.url;
+      fileName = parsed.data.file_name || 'Файл';
+    } else if (parsed.data.photo_base64) {
       const uploadResult = await uploadToCloudinary(parsed.data.photo_base64, {
         folder: 'avtogrom/chat',
       });
       photoUrl = uploadResult.url;
     }
 
-    const msgBody = parsed.data.body || (photoUrl ? 'Фото' : '');
+    const msgBody = parsed.data.body || (fileUrl ? `📄 ${fileName}` : photoUrl ? '📷 Фото' : '');
 
     const { data: msg, error: msgErr } = await supabase
       .from('messages')
@@ -189,13 +201,15 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
         sender_role: senderRole,
         body: msgBody,
         photo_url: photoUrl,
+        file_url: fileUrl,
+        file_name: fileName,
       })
-      .select('id, conversation_id, sender_role, body, photo_url, created_at')
+      .select('id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at')
       .single();
 
     if (msgErr) throw msgErr;
 
-    const preview = photoUrl ? '📷 Фото' : msgBody;
+    const preview = fileUrl ? '📄 ' + fileName : photoUrl ? '📷 Фото' : msgBody;
 
     await supabase
       .from('conversations')
