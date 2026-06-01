@@ -65,8 +65,9 @@
                 min-width: 0; }
   #chat-empty { flex: 1; display: flex; align-items: center; justify-content: center;
                 color: #aaa; font-size: 15px; }
+  #chat-empty.hidden { display: none; }
   #chat-main { display: none; flex-direction: column; flex: 1; min-height: 0; }
-  #chat-main:not([hidden]) { display: flex; }
+  #chat-main.visible { display: flex; }
   #chat-header { padding: 14px 20px; background: #fff; border-bottom: 1px solid #e8e8e8;
                  display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
   #chat-header-avatar { width: 36px; height: 36px; border-radius: 50%; background: #ffe5db;
@@ -131,7 +132,7 @@
   <div id="chat-panel">
     <div id="chat-empty">Выберите беседу слева</div>
 
-    <div id="chat-main" hidden>
+    <div id="chat-main" class="hidden">
       <div id="chat-header">
         <div id="chat-header-avatar"></div>
         <div>
@@ -265,8 +266,8 @@ function selectConv(conv) {
     ? `<img src="${escHtml(photo)}" alt="">`
     : escHtml(name[0].toUpperCase());
 
-  document.getElementById('chat-empty').hidden = true;
-  document.getElementById('chat-main').hidden = false;
+  document.getElementById('chat-empty').classList.add('hidden');
+  document.getElementById('chat-main').classList.add('visible');
 
   document.getElementById('messages').innerHTML = '';
   document.getElementById('send-err').textContent = '';

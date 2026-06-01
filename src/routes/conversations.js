@@ -165,8 +165,8 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    const isOwner = conv.user_id === req.user.sub;
-    const senderRole = isOwner ? 'client' : 'business';
+    const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
+    const senderRole = isStaff ? 'business' : (conv.user_id === req.user.sub ? 'client' : 'business');
 
     let photoUrl = null;
     if (parsed.data.photo_base64) {
