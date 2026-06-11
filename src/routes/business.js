@@ -902,13 +902,9 @@ router.post('/upload', async (req, res, next) => {
 
 // ─── User / Role management ────────────────────────────────────────
 
-// GET /api/business/users — list all users with roles (admin only)
+// GET /api/business/users — list all users with roles
 router.get('/users', async (req, res, next) => {
   try {
-    if (!isAdmin(req)) {
-      return res.status(403).json({ error: 'Нет доступа' });
-    }
-
     const { data, error } = await supabase
       .from('users')
       .select('id, name, email, role, created_at')
