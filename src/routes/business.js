@@ -900,4 +900,57 @@ router.post('/upload', async (req, res, next) => {
   }
 });
 
+// ─── User / Role management ────────────────────────────────────────
+
+// GET /api/business/users — list all users with roles (admin only)
+router.get('/users', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, role, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ users: data || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const roleSchema = z.object({
+  role: z.enum(['admin', 'moderator', 'master', 'client']),
+});
+
+// PATCH /api/business/users/:id/role — update user role (admin only)
+router.patch('/users/:id/role', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = roleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Некорректная роль' });
+    }
+
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('users')
+      .update({ role: parsed.data.role })
+      .eq('id', id)
+      .select('id, name, email, role')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ user: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
