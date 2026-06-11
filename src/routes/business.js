@@ -302,6 +302,93 @@ router.get('/clients', async (req, res, next) => {
   }
 });
 
+// POST /api/business/clients/start-conversation — find or create conversation with client by phone
+router.post('/clients/start-conversation', async (req, res, next) => {
+  try {
+    const { phone, name } = req.body || {};
+    if (!phone) {
+      return res.status(400).json({ error: 'Укажите номер телефона' });
+    }
+
+    // 1. Try to find a user_id from bookings with this phone
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('user_id, specialist_id')
+      .eq('customer_phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    let userId = bookings?.[0]?.user_id;
+    const specialistId = bookings?.[0]?.specialist_id;
+
+    // 2. If no user_id, create a placeholder user for the client
+    if (!userId) {
+      const placeholderEmail = `client_${phone.replace(/[^0-9]/g, '')}@placeholder.mservice`;
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', placeholderEmail)
+        .maybeSingle();
+
+      if (existingUser) {
+        userId = existingUser.id;
+      } else {
+        const { data: newUser, error: userErr } = await supabase
+          .from('users')
+          .insert({
+            name: name || 'Клиент',
+            email: placeholderEmail,
+            password_hash: 'placeholder_no_auth',
+            role: 'client',
+          })
+          .select('id')
+          .single();
+
+        if (userErr) throw userErr;
+        userId = newUser.id;
+      }
+    }
+
+    // 3. Find a specialist — use the booking's specialist or fallback to any
+    let targetSpecialistId = specialistId;
+    if (!targetSpecialistId) {
+      const { data: anySpecialist } = await supabase
+        .from('specialists')
+        .select('id')
+        .limit(1)
+        .maybeSingle();
+      targetSpecialistId = anySpecialist?.id;
+    }
+
+    if (!targetSpecialistId) {
+      return res.status(400).json({ error: 'Нет сотрудников в системе' });
+    }
+
+    // 4. Get or create conversation
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id, user_id, specialist_id, last_message_at, last_message_body, last_message_sender, created_at, specialist:specialists(id, full_name, photo_url), client:users(id, name)')
+      .eq('user_id', userId)
+      .eq('specialist_id', targetSpecialistId)
+      .maybeSingle();
+
+    if (existingConv) {
+      return res.json({ conversation: existingConv });
+    }
+
+    const { data: newConv, error: convErr } = await supabase
+      .from('conversations')
+      .insert({ user_id: userId, specialist_id: targetSpecialistId })
+      .select('id, user_id, specialist_id, last_message_at, last_message_body, last_message_sender, created_at, specialist:specialists(id, full_name, photo_url), client:users(id, name)')
+      .single();
+
+    if (convErr) throw convErr;
+    res.json({ conversation: newConv });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/business/clients/conversation — find conversation by client phone
 router.get('/clients/conversation', async (req, res, next) => {
   try {
