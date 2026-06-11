@@ -466,4 +466,251 @@ router.delete('/schedules/:id', async (req, res, next) => {
   }
 });
 
+// ─── Services CRUD ────────────────────────────────────────────────
+
+const serviceSchema = z.object({
+  title: z.string().min(1, 'Название обязательно'),
+  description: z.string().optional(),
+  price_from: z.number().min(0),
+  price_fixed: z.boolean(),
+  duration_minutes: z.number().int().min(1),
+  photo_url: z.string().optional(),
+});
+
+// POST /api/business/services — create service
+router.post('/services', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = serviceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0].message });
+    }
+
+    const { data, error } = await supabase
+      .from('services')
+      .insert(parsed.data)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ service: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/business/services/:id — update service
+router.put('/services/:id', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = serviceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0].message });
+    }
+
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('services')
+      .update(parsed.data)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Услуга не найдена' });
+    res.json({ service: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/business/services/:id — delete service
+router.delete('/services/:id', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const { id } = req.params;
+    const { error } = await supabase
+      .from('services')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Specialists (Employees) CRUD ────────────────────────────────
+
+const specialistSchema = z.object({
+  full_name: z.string().min(1, 'Имя обязательно'),
+  photo_url: z.string().optional(),
+  specialization: z.string().optional(),
+});
+
+// POST /api/business/specialists — create specialist
+router.post('/specialists', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = specialistSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0].message });
+    }
+
+    const { data, error } = await supabase
+      .from('specialists')
+      .insert(parsed.data)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ specialist: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/business/specialists/:id — update specialist
+router.put('/specialists/:id', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = specialistSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.errors[0].message });
+    }
+
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('specialists')
+      .update(parsed.data)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Сотрудник не найден' });
+    res.json({ specialist: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/business/specialists/:id — delete specialist
+router.delete('/specialists/:id', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const { id } = req.params;
+    const { error } = await supabase
+      .from('specialists')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Service-Specialist assignment ────────────────────────────────
+
+const serviceLinkSchema = z.object({
+  service_id: z.string().uuid(),
+  specialist_id: z.string().uuid(),
+});
+
+// POST /api/business/service-specialists — link service to specialist
+router.post('/service-specialists', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = serviceLinkSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Некорректные данные' });
+    }
+
+    const { data, error } = await supabase
+      .from('service_specialists')
+      .insert(parsed.data)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Связь уже существует' });
+      }
+      throw error;
+    }
+
+    res.status(201).json({ link: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/business/service-specialists — unlink service from specialist
+router.delete('/service-specialists', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const { service_id, specialist_id } = req.query;
+    if (!service_id || !specialist_id) {
+      return res.status(400).json({ error: 'Укажите service_id и specialist_id' });
+    }
+
+    const { error } = await supabase
+      .from('service_specialists')
+      .delete()
+      .eq('service_id', service_id)
+      .eq('specialist_id', specialist_id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/business/specialists/:id/services — get services for a specialist
+router.get('/specialists/:id/services', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const { data: links, error } = await supabase
+      .from('service_specialists')
+      .select('service_id, service:services(id, title)')
+      .eq('specialist_id', id);
+
+    if (error) throw error;
+
+    const services = (links || []).map((l) => l.service).filter(Boolean);
+    res.json({ services });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
