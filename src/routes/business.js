@@ -81,7 +81,7 @@ router.get('/bookings', async (req, res, next) => {
       created_at: b.created_at,
       service_id: b.service?.id,
       service_name: b.service?.title,
-      service_price: b.service?.price_fixed ?? b.service?.price_from,
+      service_price: b.service?.price_from,
       specialist_id: b.specialist?.id,
       specialist_name: b.specialist?.full_name,
       specialist_photo: b.specialist?.photo_url,
@@ -221,14 +221,31 @@ router.get('/specialists', async (req, res, next) => {
   }
 });
 
-// GET /api/business/services — list all services
+// GET /api/business/services — list services, optionally filtered by specialist_id
 router.get('/services', async (req, res, next) => {
   try {
-    const { data, error } = await supabase
+    const { specialist_id } = req.query;
+
+    let query = supabase
       .from('services')
       .select('id, title, description, price_from, price_fixed, duration_minutes, photo_url')
       .order('title', { ascending: true });
 
+    if (specialist_id) {
+      const { data: links } = await supabase
+        .from('service_specialists')
+        .select('service_id')
+        .eq('specialist_id', specialist_id);
+
+      const serviceIds = (links || []).map((l) => l.service_id);
+      if (serviceIds.length > 0) {
+        query = query.in('id', serviceIds);
+      } else {
+        return res.json({ services: [] });
+      }
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
     res.json({ services: data || [] });
   } catch (err) {
