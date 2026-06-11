@@ -302,6 +302,47 @@ router.get('/clients', async (req, res, next) => {
   }
 });
 
+// GET /api/business/clients/conversation — find conversation by client phone
+router.get('/clients/conversation', async (req, res, next) => {
+  try {
+    const { phone } = req.query;
+    if (!phone || typeof phone !== 'string') {
+      return res.status(400).json({ error: 'Укажите номер телефона' });
+    }
+
+    // Find bookings with this phone that have a user_id
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('user_id')
+      .eq('customer_phone', phone)
+      .not('user_id', 'is', null)
+      .limit(1);
+
+    const userId = bookings?.[0]?.user_id;
+    if (!userId) {
+      return res.json({ conversation: null });
+    }
+
+    const { data } = await supabase
+      .from('conversations')
+      .select(`
+        id, user_id, specialist_id,
+        last_message_at, last_message_body, last_message_sender,
+        created_at,
+        specialist:specialists(id, full_name, photo_url),
+        client:users(id, name)
+      `)
+      .eq('user_id', userId)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    res.json({ conversation: data || null });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/business/clients/history — booking history by phone
 router.get('/clients/history', async (req, res, next) => {
   try {
