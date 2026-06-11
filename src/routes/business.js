@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const router = Router();
 
@@ -708,6 +709,47 @@ router.get('/specialists/:id/services', async (req, res, next) => {
 
     const services = (links || []).map((l) => l.service).filter(Boolean);
     res.json({ services });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/business/services/:id/specialists — get specialists for a service
+router.get('/services/:id/specialists', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const { data: links, error } = await supabase
+      .from('service_specialists')
+      .select('specialist_id, specialist:specialists(id, full_name, photo_url, specialization)')
+      .eq('service_id', id);
+
+    if (error) throw error;
+
+    const specialists = (links || []).map((l) => l.specialist).filter(Boolean);
+    res.json({ specialists });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/business/upload — upload image to Cloudinary
+const uploadSchema = z.object({
+  file_base64: z.string().min(1),
+});
+
+router.post('/upload', async (req, res, next) => {
+  try {
+    const parsed = uploadSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Файл не передан' });
+    }
+
+    const result = await uploadToCloudinary(parsed.data.file_base64, {
+      folder: 'avtogrom',
+    });
+
+    res.json({ url: result.url, public_id: result.public_id });
   } catch (err) {
     next(err);
   }
