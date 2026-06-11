@@ -457,6 +457,7 @@ router.get('/clients/history', async (req, res, next) => {
       status: b.status,
       service_name: b.service?.title,
       specialist_name: b.specialist?.full_name,
+      customer_name: b.customer_name,
     }));
 
     res.json({ history });
