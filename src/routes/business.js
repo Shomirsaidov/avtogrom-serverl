@@ -107,7 +107,7 @@ router.get('/bookings/:id', async (req, res, next) => {
       .select(`
         id, scheduled_at, duration_minutes, status, customer_name, customer_phone, created_at,
         service:services(id, title, description, price_from, price_fixed, duration_minutes),
-        specialist:specialists(id, full_name, photo_url, specialization, bio),
+        specialist:specialists(id, full_name, photo_url, specialization),
         car:cars(id, make, model, year, license_plate)
       `)
       .eq('id', id);
@@ -211,7 +211,7 @@ router.get('/specialists', async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from('specialists')
-      .select('id, full_name, photo_url, specialization, bio')
+      .select('id, full_name, photo_url, specialization')
       .order('full_name', { ascending: true });
 
     if (error) throw error;
@@ -226,7 +226,7 @@ router.get('/services', async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from('services')
-      .select('id, title, description, price_from, price_fixed, duration_minutes, photo_url, category_id')
+      .select('id, title, description, price_from, price_fixed, duration_minutes, photo_url')
       .order('title', { ascending: true });
 
     if (error) throw error;
@@ -311,7 +311,6 @@ router.get('/clients/history', async (req, res, next) => {
       status: b.status,
       service_name: b.service?.title,
       specialist_name: b.specialist?.full_name,
-      comment: b.comment,
     }));
 
     res.json({ history });
