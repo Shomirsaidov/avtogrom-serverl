@@ -212,7 +212,7 @@ router.get('/specialists', async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from('specialists')
-      .select('id, full_name, photo_url, specialization')
+      .select('id, full_name, photo_url, specialization, user_id')
       .order('full_name', { ascending: true });
 
     if (error) throw error;
@@ -258,11 +258,26 @@ router.get('/services', async (req, res, next) => {
 router.get('/clients', async (req, res, next) => {
   try {
     const { search } = req.query;
+    const isMaster = req.user.role === 'master';
 
     let query = supabase
       .from('bookings')
       .select('customer_name, customer_phone, scheduled_at, status')
       .order('scheduled_at', { ascending: false });
+
+    if (isMaster) {
+      const { data: specialist } = await supabase
+        .from('specialists')
+        .select('id')
+        .eq('user_id', req.user.sub)
+        .maybeSingle();
+
+      if (specialist) {
+        query = query.eq('specialist_id', specialist.id);
+      } else {
+        return res.json({ clients: [] });
+      }
+    }
 
     if (search) {
       query = query.or(
@@ -772,6 +787,63 @@ router.delete('/specialists/:id', async (req, res, next) => {
 
     if (error) throw error;
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/business/specialists/:id/link-user — link a user to a specialist (admin only)
+router.patch('/specialists/:id/link-user', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const parsed = z.object({ user_id: z.string().uuid() }).safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Укажите корректный user_id' });
+    }
+
+    const { user_id } = parsed.data;
+
+    // Unlink any previous specialist from this user
+    await supabase.from('specialists').update({ user_id: null }).eq('user_id', user_id);
+
+    // Link this specialist to the user
+    const { data, error } = await supabase
+      .from('specialists')
+      .update({ user_id })
+      .eq('id', req.params.id)
+      .select('id, full_name, user_id')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Сотрудник не найден' });
+
+    res.json({ specialist: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/business/specialists/:id/unlink-user — unlink user from specialist (admin only)
+router.patch('/specialists/:id/unlink-user', async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const { data, error } = await supabase
+      .from('specialists')
+      .update({ user_id: null })
+      .eq('id', req.params.id)
+      .select('id, full_name, user_id')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'Сотрудник не найден' });
+
+    res.json({ specialist: data });
   } catch (err) {
     next(err);
   }

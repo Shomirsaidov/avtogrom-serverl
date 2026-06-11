@@ -60,9 +60,21 @@ async function getOrCreateConversation(userId, specialistId) {
   return fetchConversationWithSpecialist(data.id);
 }
 
-function hasAccess(conv, userId, userRole) {
+async function getSpecialistIdForMaster(userId) {
+  const { data } = await supabase
+    .from('specialists')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+function hasAccess(conv, userId, userRole, specialistIdForMaster) {
   if (conv.user_id === userId) return true;
-  return ['admin', 'moderator', 'system_admin', 'master'].includes(userRole);
+  if (userRole === 'master') {
+    return specialistIdForMaster !== null && conv.specialist_id === specialistIdForMaster;
+  }
+  return ['admin', 'moderator', 'system_admin'].includes(userRole);
 }
 
 // ── routes ────────────────────────────────────────────────────────────────────
@@ -73,6 +85,7 @@ function hasAccess(conv, userId, userRole) {
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
+    const isMaster = req.user.role === 'master';
 
     let query = supabase
       .from('conversations')
@@ -85,11 +98,24 @@ router.get('/', requireAuth, async (req, res, next) => {
       `)
       .order('last_message_at', { ascending: false, nullsFirst: false });
 
-    if (!isStaff) query = query.eq('user_id', req.user.sub);
+    if (isMaster) {
+      const { data: specialist } = await supabase
+        .from('specialists')
+        .select('id')
+        .eq('user_id', req.user.sub)
+        .maybeSingle();
+
+      if (specialist) {
+        query = query.eq('specialist_id', specialist.id);
+      } else {
+        return res.json({ conversations: [] });
+      }
+    } else if (!isStaff) {
+      query = query.eq('user_id', req.user.sub);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
-
     res.json({ conversations: data || [] });
   } catch (err) {
     next(err);
@@ -120,13 +146,17 @@ router.get('/:id/messages', requireAuth, async (req, res, next) => {
 
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id, user_id')
+      .select('id, user_id, specialist_id')
       .eq('id', id)
       .maybeSingle();
 
     if (convErr) throw convErr;
     if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
-    if (!hasAccess(conv, req.user.sub, req.user.role)) {
+
+    const specialistIdForMaster = req.user.role === 'master'
+      ? await getSpecialistIdForMaster(req.user.sub)
+      : null;
+    if (!hasAccess(conv, req.user.sub, req.user.role, specialistIdForMaster)) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
@@ -160,13 +190,17 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
 
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id, user_id')
+      .select('id, user_id, specialist_id')
       .eq('id', id)
       .maybeSingle();
 
     if (convErr) throw convErr;
     if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
-    if (!hasAccess(conv, req.user.sub, req.user.role)) {
+
+    const specialistIdForMaster = req.user.role === 'master'
+      ? await getSpecialistIdForMaster(req.user.sub)
+      : null;
+    if (!hasAccess(conv, req.user.sub, req.user.role, specialistIdForMaster)) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
