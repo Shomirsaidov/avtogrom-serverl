@@ -707,6 +707,22 @@ router.post('/specialists', async (req, res, next) => {
       .single();
 
     if (error) throw error;
+
+    // Create default schedule: Mon-Sat 09:00-19:00, Sunday off
+    const defaultDays = [1, 2, 3, 4, 5, 6];
+    const defaultEntries = defaultDays.map((day) => ({
+      specialist_id: data.id,
+      day_of_week: day,
+      start_time: '09:00',
+      end_time: '19:00',
+    }));
+
+    const { error: schedErr } = await supabase
+      .from('specialist_schedules')
+      .insert(defaultEntries);
+
+    if (schedErr) console.error('Failed to create default schedule:', schedErr);
+
     res.status(201).json({ specialist: data });
   } catch (err) {
     next(err);
