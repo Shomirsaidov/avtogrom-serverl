@@ -25,7 +25,7 @@ router.get('/bookings', async (req, res, next) => {
     let query = supabase
       .from('bookings')
       .select(`
-        id, scheduled_at, duration_minutes, status, customer_name, customer_phone, comment, created_at,
+        id, scheduled_at, duration_minutes, status, customer_name, customer_phone, created_at,
         service:services(id, title, price_from, price_fixed, duration_minutes),
         specialist:specialists(id, full_name, photo_url, specialization),
         car:cars(id, make, model, year, license_plate)
@@ -78,7 +78,6 @@ router.get('/bookings', async (req, res, next) => {
       status: b.status,
       customer_name: b.customer_name,
       customer_phone: b.customer_phone,
-      comment: b.comment,
       created_at: b.created_at,
       service_id: b.service?.id,
       service_name: b.service?.title,
@@ -106,7 +105,7 @@ router.get('/bookings/:id', async (req, res, next) => {
     let query = supabase
       .from('bookings')
       .select(`
-        id, scheduled_at, duration_minutes, status, customer_name, customer_phone, comment, created_at,
+        id, scheduled_at, duration_minutes, status, customer_name, customer_phone, created_at,
         service:services(id, title, description, price_from, price_fixed, duration_minutes),
         specialist:specialists(id, full_name, photo_url, specialization, bio),
         car:cars(id, make, model, year, license_plate)
@@ -139,7 +138,6 @@ router.get('/bookings/:id', async (req, res, next) => {
         status: booking.status,
         customer_name: booking.customer_name,
         customer_phone: booking.customer_phone,
-        comment: booking.comment,
         created_at: booking.created_at,
         service: booking.service,
         specialist: booking.specialist,
@@ -297,7 +295,7 @@ router.get('/clients/history', async (req, res, next) => {
     const { data, error } = await supabase
       .from('bookings')
       .select(`
-        id, scheduled_at, duration_minutes, status, customer_name, customer_phone, comment,
+        id, scheduled_at, duration_minutes, status, customer_name, customer_phone,
         service:services(id, title, price_from, price_fixed),
         specialist:specialists(id, full_name, photo_url)
       `)
