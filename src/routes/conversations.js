@@ -38,7 +38,7 @@ async function fetchConversationWithSpecialist(id) {
       last_message_at, last_message_body, last_message_sender,
       created_at,
       specialist:specialists(id, full_name, photo_url),
-      client:users(id, name)
+      client:users!user_id(id, name)
     `)
     .eq('id', id)
     .single();
@@ -100,7 +100,7 @@ router.get('/', requireAuth, async (req, res, next) => {
         last_message_at, last_message_body, last_message_sender,
         created_at,
         specialist:specialists(id, full_name, photo_url),
-        client:users(id, name)
+        client:users!user_id(id, name)
       `)
       .order('last_message_at', { ascending: false, nullsFirst: false });
 

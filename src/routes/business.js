@@ -439,7 +439,7 @@ router.post('/clients/start-conversation', async (req, res, next) => {
     // 4. Get or create conversation
     const { data: existingConv } = await supabase
       .from('conversations')
-      .select('id, user_id, specialist_id, last_message_at, last_message_body, last_message_sender, created_at, specialist:specialists(id, full_name, photo_url), client:users(id, name)')
+      .select('id, user_id, specialist_id, last_message_at, last_message_body, last_message_sender, created_at, specialist:specialists(id, full_name, photo_url), client:users!user_id(id, name)')
       .eq('user_id', userId)
       .eq('specialist_id', targetSpecialistId)
       .maybeSingle();
@@ -451,7 +451,7 @@ router.post('/clients/start-conversation', async (req, res, next) => {
     const { data: newConv, error: convErr } = await supabase
       .from('conversations')
       .insert({ user_id: userId, specialist_id: targetSpecialistId })
-      .select('id, user_id, specialist_id, last_message_at, last_message_body, last_message_sender, created_at, specialist:specialists(id, full_name, photo_url), client:users(id, name)')
+      .select('id, user_id, specialist_id, last_message_at, last_message_body, last_message_sender, created_at, specialist:specialists(id, full_name, photo_url), client:users!user_id(id, name)')
       .single();
 
     if (convErr) throw convErr;
@@ -489,7 +489,7 @@ router.get('/clients/conversation', async (req, res, next) => {
         last_message_at, last_message_body, last_message_sender,
         created_at,
         specialist:specialists(id, full_name, photo_url),
-        client:users(id, name)
+        client:users!user_id(id, name)
       `)
       .eq('user_id', userId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
