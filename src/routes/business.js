@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { sendNotification } from '../services/notifications.js';
 
 const router = Router();
 
@@ -200,6 +201,47 @@ router.patch('/bookings/:id/status', async (req, res, next) => {
       .single();
 
     if (updateErr) throw updateErr;
+
+    // Trigger notification to client in background
+    (async () => {
+      try {
+        if (updated.user_id) {
+          let title = '';
+          let body = '';
+
+          switch (newStatus) {
+            case 'confirmed':
+              title = 'Запись подтверждена';
+              body = 'Ваша запись подтверждена. Ждём вас!';
+              break;
+            case 'cancelled':
+              title = 'Запись отменена';
+              body = 'Запись отменена автосервисом.';
+              break;
+            case 'in_progress':
+              title = 'Начало обслуживания';
+              body = 'Ваш автомобиль принят в работу.';
+              break;
+            case 'completed':
+              title = 'Обслуживание завершено';
+              body = 'Работы завершены. Спасибо за визит!';
+              break;
+          }
+
+          if (title && body) {
+            await sendNotification({
+              userId: updated.user_id,
+              type: `booking_${newStatus}`,
+              title,
+              body,
+              relatedId: updated.id
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[Notification Hook Error in Business Status]', err);
+      }
+    })();
 
     res.json({ booking: updated });
   } catch (err) {

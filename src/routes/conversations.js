@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { sendNotification } from '../services/notifications.js';
 
 const router = Router();
 
@@ -250,6 +251,36 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
       .single();
 
     if (msgErr) throw msgErr;
+
+    // Trigger notification in background
+    (async () => {
+      try {
+        if (senderRole === 'client') {
+          const { data: spec } = await supabase.from('specialists').select('user_id').eq('id', conv.specialist_id).maybeSingle();
+          if (spec && spec.user_id) {
+            await sendNotification({
+              userId: spec.user_id,
+              type: 'chat_message',
+              title: 'Новое сообщение от клиента',
+              body: msgBody,
+              relatedId: conv.id
+            });
+          }
+        } else {
+          const { data: spec } = await supabase.from('specialists').select('full_name').eq('id', conv.specialist_id).maybeSingle();
+          const specName = spec?.full_name || 'Автосервис';
+          await sendNotification({
+            userId: conv.user_id,
+            type: 'chat_message',
+            title: specName,
+            body: msgBody,
+            relatedId: conv.id
+          });
+        }
+      } catch (err) {
+        console.error('[Notification Hook Error in Chat]', err);
+      }
+    })();
 
     const preview = fileUrl ? '📄 ' + fileName : photoUrl ? '📷 Фото' : msgBody;
 

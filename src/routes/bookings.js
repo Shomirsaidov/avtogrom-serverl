@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabase } from '../supabase.js';
 import { isSlotStillFree } from '../services/slots.js';
 import { requireAuth, optionalAuth } from '../auth/middleware.js';
+import { sendNotification, sendNotificationToStaff } from '../services/notifications.js';
 
 const router = Router();
 
@@ -120,6 +121,33 @@ router.post('/', optionalAuth, async (req, res, next) => {
       .single();
     if (insertErr) throw insertErr;
 
+    // Trigger notification in background
+    (async () => {
+      try {
+        const { data: fullService } = await supabase.from('services').select('title').eq('id', body.service_id).maybeSingle();
+        const serviceTitle = fullService?.title || 'услугу';
+
+        if (booking.user_id) {
+          await sendNotification({
+            userId: booking.user_id,
+            type: 'booking_created',
+            title: 'Запись создана',
+            body: `Запись успешно создана. Ожидайте подтверждения.`,
+            relatedId: booking.id
+          });
+        }
+
+        await sendNotificationToStaff({
+          type: 'booking_created',
+          title: 'Новая запись',
+          body: `Поступила новая запись от ${body.customer_name} на ${serviceTitle}.`,
+          relatedId: booking.id
+        });
+      } catch (err) {
+        console.error('[Notification Hook Error]', err);
+      }
+    })();
+
     res.status(201).json({ booking });
   } catch (err) {
     next(err);
@@ -154,6 +182,30 @@ router.patch('/:id/cancel', requireAuth, async (req, res, next) => {
       .single();
 
     if (updateErr) throw updateErr;
+
+    // Trigger notifications
+    (async () => {
+      try {
+        if (updated.user_id) {
+          await sendNotification({
+            userId: updated.user_id,
+            type: 'booking_cancelled',
+            title: 'Запись отменена',
+            body: 'Запись успешно отменена.',
+            relatedId: updated.id
+          });
+        }
+        await sendNotificationToStaff({
+          type: 'booking_cancelled',
+          title: 'Отмена записи',
+          body: `Клиент ${updated.customer_name} отменил запись.`,
+          relatedId: updated.id
+        });
+      } catch (err) {
+        console.error('[Notification Hook Error]', err);
+      }
+    })();
+
     res.json({ booking: updated });
   } catch (err) {
     next(err);
@@ -207,6 +259,33 @@ router.patch('/:id/reschedule', requireAuth, async (req, res, next) => {
       .single();
 
     if (updateErr) throw updateErr;
+
+    // Trigger notifications
+    (async () => {
+      try {
+        const timeLabel = new Date(updated.scheduled_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+        const dateLabel = new Date(updated.scheduled_at).toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+
+        if (updated.user_id) {
+          await sendNotification({
+            userId: updated.user_id,
+            type: 'booking_rescheduled',
+            title: 'Запись перенесена',
+            body: `Запись перенесена на новую дату и время: ${dateLabel} в ${timeLabel}. Ожидайте подтверждения.`,
+            relatedId: updated.id
+          });
+        }
+        await sendNotificationToStaff({
+          type: 'booking_rescheduled',
+          title: 'Перенос записи',
+          body: `Клиент ${updated.customer_name} перенес запись на ${dateLabel} в ${timeLabel}.`,
+          relatedId: updated.id
+        });
+      } catch (err) {
+        console.error('[Notification Hook Error]', err);
+      }
+    })();
+
     res.json({ booking: updated });
   } catch (err) {
     next(err);
