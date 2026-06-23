@@ -29,7 +29,7 @@ router.get('/summary', async (req, res, next) => {
         id,
         status,
         created_at,
-        referee:users (id, name, created_at)
+        referee:users!referee_id (id, name, created_at)
       `)
       .eq('referrer_id', userId)
       .order('created_at', { ascending: false });
