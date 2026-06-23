@@ -286,7 +286,7 @@ router.get('/services', async (req, res, next) => {
 
     let query = supabase
       .from('services')
-      .select('id, title, description, price_from, price_fixed, duration_minutes, photo_url')
+      .select('id, title, description, price_from, price_fixed, duration_minutes, photo_url, discount_tag, discount_price')
       .order('title', { ascending: true });
 
     if (specialist_id) {
