@@ -22,6 +22,11 @@ const createSchema = z.object({
   specialist_id: z.string().uuid('Укажите корректный идентификатор специалиста'),
 });
 
+const groupCreateSchema = z.object({
+  group_name: z.string().min(1, 'Укажите название группы').max(100),
+  user_ids: z.array(z.string().uuid('Некорректный ID пользователя')),
+});
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // Fetch a single conversation row joined with its specialist and client — used in responses.
@@ -29,7 +34,7 @@ async function fetchConversationWithSpecialist(id) {
   const { data, error } = await supabase
     .from('conversations')
     .select(`
-      id, user_id, specialist_id,
+      id, user_id, specialist_id, is_group, group_name, created_by,
       last_message_at, last_message_body, last_message_sender,
       created_at,
       specialist:specialists(id, full_name, photo_url),
@@ -91,7 +96,7 @@ router.get('/', requireAuth, async (req, res, next) => {
     let query = supabase
       .from('conversations')
       .select(`
-        id, user_id, specialist_id,
+        id, user_id, specialist_id, is_group, group_name, created_by,
         last_message_at, last_message_body, last_message_sender,
         created_at,
         specialist:specialists(id, full_name, photo_url),
@@ -107,7 +112,18 @@ router.get('/', requireAuth, async (req, res, next) => {
         .maybeSingle();
 
       if (specialist) {
-        query = query.eq('specialist_id', specialist.id);
+        const { data: memberGroups } = await supabase
+          .from('group_members')
+          .select('conversation_id')
+          .eq('user_id', req.user.sub);
+        
+        const groupIds = (memberGroups || []).map(g => g.conversation_id);
+
+        if (groupIds.length > 0) {
+          query = query.or(`specialist_id.eq.${specialist.id},id.in.(${groupIds.map(id => `"${id}"`).join(',')})`);
+        } else {
+          query = query.eq('specialist_id', specialist.id);
+        }
       } else {
         return res.json({ conversations: [] });
       }
@@ -147,23 +163,41 @@ router.get('/:id/messages', requireAuth, async (req, res, next) => {
 
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id, user_id, specialist_id')
+      .select('id, user_id, specialist_id, is_group, group_name')
       .eq('id', id)
       .maybeSingle();
 
     if (convErr) throw convErr;
     if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
 
-    const specialistIdForMaster = req.user.role === 'master'
-      ? await getSpecialistIdForMaster(req.user.sub)
-      : null;
-    if (!hasAccess(conv, req.user.sub, req.user.role, specialistIdForMaster)) {
+    let hasAccessToConv = false;
+    if (['admin', 'moderator', 'system_admin'].includes(req.user.role)) {
+      hasAccessToConv = true;
+    } else if (conv.is_group) {
+      const { data: membership } = await supabase
+        .from('group_members')
+        .select('id')
+        .eq('conversation_id', id)
+        .eq('user_id', req.user.sub)
+        .maybeSingle();
+      hasAccessToConv = !!membership;
+    } else {
+      const specialistIdForMaster = req.user.role === 'master'
+        ? await getSpecialistIdForMaster(req.user.sub)
+        : null;
+      hasAccessToConv = hasAccess(conv, req.user.sub, req.user.role, specialistIdForMaster);
+    }
+
+    if (!hasAccessToConv) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
     let query = supabase
       .from('messages')
-      .select('id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at')
+      .select(`
+        id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at, sender_id,
+        sender:users(id, name)
+      `)
       .eq('conversation_id', id)
       .order('created_at', { ascending: true })
       .limit(limit);
@@ -191,24 +225,35 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
 
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id, user_id, specialist_id')
+      .select('id, user_id, specialist_id, is_group, group_name')
       .eq('id', id)
       .maybeSingle();
 
     if (convErr) throw convErr;
     if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
 
-    const specialistIdForMaster = req.user.role === 'master'
-      ? await getSpecialistIdForMaster(req.user.sub)
-      : null;
-    if (!hasAccess(conv, req.user.sub, req.user.role, specialistIdForMaster)) {
+    let hasAccessToConv = false;
+    if (['admin', 'moderator', 'system_admin'].includes(req.user.role)) {
+      hasAccessToConv = true;
+    } else if (conv.is_group) {
+      const { data: membership } = await supabase
+        .from('group_members')
+        .select('id')
+        .eq('conversation_id', id)
+        .eq('user_id', req.user.sub)
+        .maybeSingle();
+      hasAccessToConv = !!membership;
+    } else {
+      const specialistIdForMaster = req.user.role === 'master'
+        ? await getSpecialistIdForMaster(req.user.sub)
+        : null;
+      hasAccessToConv = hasAccess(conv, req.user.sub, req.user.role, specialistIdForMaster);
+    }
+
+    if (!hasAccessToConv) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    // sender_role logic (permanent — do not change without understanding all 3 cases):
-    // 1. regular client in mobile app → never sends sender_role → ownership check gives 'client'
-    // 2. staff (admin) in mobile app → never sends sender_role → ownership check gives 'client'
-    // 3. staff in admin-chat.html → sends sender_role:'business' → override to 'business'
     const isStaff = ['admin', 'moderator', 'system_admin', 'master'].includes(req.user.role);
     const isConvOwner = conv.user_id === req.user.sub;
     let senderRole = isConvOwner ? 'client' : 'business';
@@ -246,8 +291,12 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
         photo_url: photoUrl,
         file_url: fileUrl,
         file_name: fileName,
+        sender_id: req.user.sub,
       })
-      .select('id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at')
+      .select(`
+        id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at, sender_id,
+        sender:users(id, name)
+      `)
       .single();
 
     if (msgErr) throw msgErr;
@@ -255,27 +304,57 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
     // Trigger notification in background
     (async () => {
       try {
-        if (senderRole === 'client') {
-          const { data: spec } = await supabase.from('specialists').select('user_id').eq('id', conv.specialist_id).maybeSingle();
-          if (spec && spec.user_id) {
+        if (conv.is_group) {
+          const { data: members } = await supabase
+            .from('group_members')
+            .select('user_id')
+            .eq('conversation_id', id)
+            .neq('user_id', req.user.sub);
+
+          if (members && members.length > 0) {
+            let senderName = 'Сотрудник';
+            const { data: senderUser } = await supabase
+              .from('users')
+              .select('name')
+              .eq('id', req.user.sub)
+              .maybeSingle();
+            if (senderUser && senderUser.name) {
+              senderName = senderUser.name;
+            }
+
+            for (const member of members) {
+              await sendNotification({
+                userId: member.user_id,
+                type: 'chat_message',
+                title: conv.group_name || 'Групповой чат',
+                body: `${senderName}: ${msgBody}`,
+                relatedId: conv.id
+              });
+            }
+          }
+        } else {
+          if (senderRole === 'client') {
+            const { data: spec } = await supabase.from('specialists').select('user_id').eq('id', conv.specialist_id).maybeSingle();
+            if (spec && spec.user_id) {
+              await sendNotification({
+                userId: spec.user_id,
+                type: 'chat_message',
+                title: 'Новое сообщение от клиента',
+                body: msgBody,
+                relatedId: conv.id
+              });
+            }
+          } else {
+            const { data: spec } = await supabase.from('specialists').select('full_name').eq('id', conv.specialist_id).maybeSingle();
+            const specName = spec?.full_name || 'Автосервис';
             await sendNotification({
-              userId: spec.user_id,
+              userId: conv.user_id,
               type: 'chat_message',
-              title: 'Новое сообщение от клиента',
+              title: specName,
               body: msgBody,
               relatedId: conv.id
             });
           }
-        } else {
-          const { data: spec } = await supabase.from('specialists').select('full_name').eq('id', conv.specialist_id).maybeSingle();
-          const specName = spec?.full_name || 'Автосервис';
-          await sendNotification({
-            userId: conv.user_id,
-            type: 'chat_message',
-            title: specName,
-            body: msgBody,
-            relatedId: conv.id
-          });
         }
       } catch (err) {
         console.error('[Notification Hook Error in Chat]', err);
@@ -294,6 +373,183 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
       .eq('id', id);
 
     res.status(201).json({ message: msg });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/conversations/group — create group chat (admin/moderator only)
+router.post('/group', requireAuth, async (req, res, next) => {
+  try {
+    const isStaff = ['admin', 'moderator', 'system_admin'].includes(req.user.role);
+    if (!isStaff) {
+      return res.status(403).json({ error: 'Нет прав для создания группы' });
+    }
+
+    const parsed = groupCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0].message });
+    }
+
+    const { group_name, user_ids } = parsed.data;
+
+    const { data: conv, error: convErr } = await supabase
+      .from('conversations')
+      .insert({
+        is_group: true,
+        group_name: group_name,
+        created_by: req.user.sub,
+      })
+      .select()
+      .single();
+
+    if (convErr) throw convErr;
+
+    const membersToInsert = [req.user.sub, ...user_ids].map(uid => ({
+      conversation_id: conv.id,
+      user_id: uid
+    }));
+
+    const uniqueMembers = Array.from(new Set(membersToInsert.map(m => m.user_id))).map(uid => ({
+      conversation_id: conv.id,
+      user_id: uid
+    }));
+
+    const { error: memErr } = await supabase
+      .from('group_members')
+      .insert(uniqueMembers);
+
+    if (memErr) throw memErr;
+
+    const fullConv = await fetchConversationWithSpecialist(conv.id);
+    res.status(201).json({ conversation: fullConv });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/conversations/:id/members — get members of a group
+router.get('/:id/members', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id, is_group')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
+    if (!conv.is_group) return res.status(400).json({ error: 'Это не групповой чат' });
+
+    let hasAccessToConv = false;
+    if (['admin', 'moderator', 'system_admin'].includes(req.user.role)) {
+      hasAccessToConv = true;
+    } else {
+      const { data: membership } = await supabase
+        .from('group_members')
+        .select('id')
+        .eq('conversation_id', id)
+        .eq('user_id', req.user.sub)
+        .maybeSingle();
+      hasAccessToConv = !!membership;
+    }
+
+    if (!hasAccessToConv) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
+    const { data: members, error } = await supabase
+      .from('group_members')
+      .select(`
+        id,
+        user_id,
+        user:users(id, name, role)
+      `)
+      .eq('conversation_id', id);
+
+    if (error) throw error;
+    res.json({ members: members || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/conversations/:id/members — add member to group (admin/moderator only)
+router.post('/:id/members', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const isStaff = ['admin', 'moderator', 'system_admin'].includes(req.user.role);
+    if (!isStaff) {
+      return res.status(403).json({ error: 'Нет прав для добавления участников' });
+    }
+
+    const memberSchema = z.object({
+      user_id: z.string().uuid(),
+    });
+
+    const parsed = memberSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0].message });
+    }
+
+    const { user_id } = parsed.data;
+
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id, is_group')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
+    if (!conv.is_group) return res.status(400).json({ error: 'Это не групповой чат' });
+
+    const { error } = await supabase
+      .from('group_members')
+      .insert({
+        conversation_id: id,
+        user_id: user_id,
+      });
+
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(400).json({ error: 'Пользователь уже состоит в группе' });
+      }
+      throw error;
+    }
+
+    res.status(201).json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/conversations/:id/members/:userId — remove member from group (admin/moderator only)
+router.delete('/:id/members/:userId', requireAuth, async (req, res, next) => {
+  try {
+    const { id, userId } = req.params;
+    const isStaff = ['admin', 'moderator', 'system_admin'].includes(req.user.role);
+    if (!isStaff) {
+      return res.status(403).json({ error: 'Нет прав для удаления участников' });
+    }
+
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id, is_group')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (!conv) return res.status(404).json({ error: 'Беседа не найдена' });
+    if (!conv.is_group) return res.status(400).json({ error: 'Это не групповой чат' });
+
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
+      .eq('conversation_id', id)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
