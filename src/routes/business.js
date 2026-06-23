@@ -4,6 +4,8 @@ import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
 import { sendNotification } from '../services/notifications.js';
+import { handleFirstVisit } from '../services/referrals.js';
+
 
 const router = Router();
 
@@ -236,6 +238,19 @@ router.patch('/bookings/:id/status', async (req, res, next) => {
               body,
               relatedId: updated.id
             });
+          }
+
+          // If booking is completed, check for referral first-visit reward
+          if (newStatus === 'completed') {
+            const { count } = await supabase
+              .from('bookings')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', updated.user_id)
+              .eq('status', 'completed');
+
+            if (count === 1) {
+              await handleFirstVisit(updated.user_id);
+            }
           }
         }
       } catch (err) {
@@ -662,6 +677,8 @@ const serviceSchema = z.object({
   price_fixed: z.boolean(),
   duration_minutes: z.number().int().min(1),
   photo_url: z.string().optional(),
+  discount_tag: z.string().optional().nullable(),
+  discount_price: z.number().min(0).optional().nullable(),
 });
 
 // POST /api/business/services — create service
@@ -1058,6 +1075,194 @@ router.patch('/users/:id/role', async (req, res, next) => {
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'Пользователь не найден' });
     res.json({ user: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Referrals Admin Settings & History ─────────────────────────
+router.get('/referrals/settings', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) return res.status(403).json({ error: 'Нет доступа' });
+    const { data, error } = await supabase.from('referral_settings').select('*').maybeSingle();
+    if (error) throw error;
+    res.json({ settings: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const referralSettingsSchema = z.object({
+  enabled: z.boolean(),
+  signup_reward: z.number().int().nonnegative(),
+  referrer_signup_reward: z.number().int().nonnegative(),
+  referrer_first_visit_reward: z.number().int().nonnegative(),
+});
+
+router.put('/referrals/settings', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) return res.status(403).json({ error: 'Нет доступа' });
+    const parsed = referralSettingsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+    const { data, error } = await supabase
+      .from('referral_settings')
+      .update({
+        ...parsed.data,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', '00000000-0000-0000-0000-000000000002')
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ settings: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/referrals/history', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) return res.status(403).json({ error: 'Нет доступа' });
+
+    const { data: transactions, error: txErr } = await supabase
+      .from('referral_transactions')
+      .select(`
+        id, amount, type, created_at,
+        user:users!user_id (id, name),
+        referee:users!referee_id (id, name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (txErr) throw txErr;
+
+    const { count: totalReferrals } = await supabase
+      .from('referrals')
+      .select('id', { count: 'exact', head: true });
+
+    const { count: totalFirstVisits } = await supabase
+      .from('referrals')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'first_visit');
+
+    const { data: pointsSumData } = await supabase
+      .from('referral_transactions')
+      .select('amount');
+
+    const totalPointsAwarded = (pointsSumData || []).reduce((acc, curr) => acc + curr.amount, 0);
+
+    res.json({
+      transactions: (transactions || []).map(tx => ({
+        id: tx.id,
+        amount: tx.amount,
+        type: tx.type,
+        created_at: tx.created_at,
+        referrer_name: tx.user?.name || 'Система',
+        referee_name: tx.referee?.name || 'Новый друг',
+      })),
+      analytics: {
+        total_invitations: totalReferrals || 0,
+        successful_registrations: totalReferrals || 0,
+        first_visits: totalFirstVisits || 0,
+        total_points_awarded: totalPointsAwarded || 0
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Company Profile Customization ──────────────────────────────
+const companyProfileSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  phone: z.string().min(1),
+  address: z.string().min(1),
+  coordinates: z.string().min(1),
+  working_hours: z.string().min(1),
+  logo_url: z.string().optional().nullable(),
+  carousel_urls: z.array(z.string()),
+});
+
+router.put('/company/profile', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) return res.status(403).json({ error: 'Нет доступа' });
+    const parsed = companyProfileSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+    const { data, error } = await supabase
+      .from('company_profile')
+      .update({
+        ...parsed.data,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', '00000000-0000-0000-0000-000000000001')
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ profile: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Work Examples ──────────────────────────────────────────────
+const workExampleSchema = z.object({
+  service_id: z.string().uuid().optional().nullable(),
+  description: z.string().min(1),
+  photo_url: z.string().min(1),
+});
+
+router.get('/work-examples', async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from('work_examples')
+      .select(`
+        id, description, photo_url, created_at, service_id,
+        service:services (id, title)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ work_examples: data || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/work-examples', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) return res.status(403).json({ error: 'Нет доступа' });
+    const parsed = workExampleSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+    const { data, error } = await supabase
+      .from('work_examples')
+      .insert(parsed.data)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ work_example: data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/work-examples/:id', async (req, res, next) => {
+  try {
+    if (!isAdminOrModerator(req)) return res.status(403).json({ error: 'Нет доступа' });
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('work_examples')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

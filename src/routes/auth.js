@@ -4,6 +4,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
+import { handleReferralSignup } from '../services/referrals.js';
+
 
 const router = Router();
 
@@ -11,7 +13,9 @@ const registerSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(6).max(100),
+  referred_by: z.string().optional().nullable(),
 });
+
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -20,11 +24,12 @@ const loginSchema = z.object({
 
 function issueToken(user) {
   return jwt.sign(
-    { sub: user.id, email: user.email, name: user.name, role: user.role },
+    { sub: user.id, email: user.email, name: user.name, role: user.role, bonus_points: user.bonus_points || 0 },
     process.env.JWT_SECRET,
     { expiresIn: '30d' }
   );
 }
+
 
 // POST /api/auth/register
 router.post('/register', async (req, res, next) => {
@@ -33,7 +38,7 @@ router.post('/register', async (req, res, next) => {
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0].message });
     }
-    const { name, email, password } = parsed.data;
+    const { name, email, password, referred_by } = parsed.data;
 
     const { data: existing } = await supabase
       .from('users')
@@ -48,10 +53,22 @@ router.post('/register', async (req, res, next) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .insert({ name, email, password_hash: passwordHash })
-      .select('id, name, email, role')
+      .insert({ name, email, password_hash: passwordHash, bonus_points: 0 })
+      .select('id, name, email, role, bonus_points')
       .single();
     if (error) throw error;
+
+    // Trigger referral signup if referred
+    if (referred_by) {
+      // Run in background to not block response
+      (async () => {
+        try {
+          await handleReferralSignup(user.id, referred_by);
+        } catch (err) {
+          console.error('[Referral Hook Error in register]', err);
+        }
+      })();
+    }
 
     res.status(201).json({ user, token: issueToken(user) });
   } catch (err) {
@@ -70,7 +87,7 @@ router.post('/login', async (req, res, next) => {
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, name, email, role, password_hash')
+      .select('id, name, email, role, password_hash, bonus_points')
       .eq('email', email)
       .maybeSingle();
     if (error) throw error;
@@ -95,7 +112,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, name, email, role')
+      .select('id, name, email, role, bonus_points')
       .eq('id', req.user.sub)
       .maybeSingle();
     if (error) throw error;

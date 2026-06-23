@@ -8,7 +8,7 @@ router.get('/', async (req, res, next) => {
     const search = req.query.search?.trim();
     let query = supabase
       .from('services')
-      .select('id,title,description,price_from,price_fixed,duration_minutes,photo_url')
+      .select('id,title,description,price_from,price_fixed,duration_minutes,photo_url,discount_tag,discount_price')
       .order('title', { ascending: true });
     if (search) {
       query = query.ilike('title', `%${search}%`);
@@ -27,7 +27,7 @@ router.get('/:id', async (req, res, next) => {
 
     const { data: service, error: serviceErr } = await supabase
       .from('services')
-      .select('id,title,description,price_from,price_fixed,duration_minutes,photo_url')
+      .select('id,title,description,price_from,price_fixed,duration_minutes,photo_url,discount_tag,discount_price')
       .eq('id', id)
       .maybeSingle();
     if (serviceErr) throw serviceErr;
@@ -40,7 +40,16 @@ router.get('/:id', async (req, res, next) => {
     if (linkErr) throw linkErr;
 
     const specialists = (links || []).map((l) => l.specialist).filter(Boolean);
-    res.json({ service, specialists });
+
+    const { data: workExamples, error: workExamplesErr } = await supabase
+      .from('work_examples')
+      .select('id,description,photo_url,created_at')
+      .eq('service_id', id)
+      .order('created_at', { ascending: false });
+
+    if (workExamplesErr) throw workExamplesErr;
+
+    res.json({ service, specialists, work_examples: workExamples || [] });
   } catch (err) {
     next(err);
   }

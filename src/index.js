@@ -23,6 +23,9 @@ import conversationsRouter from './routes/conversations.js';
 import carsRouter from './routes/cars.js';
 import businessRouter from './routes/business.js';
 import notificationsRouter from './routes/notifications.js';
+import referralsRouter from './routes/referrals.js';
+import companyRouter from './routes/company.js';
+
 
 const app = express();
 
@@ -41,6 +44,9 @@ app.use('/api/conversations', conversationsRouter);
 app.use('/api/cars', carsRouter);
 app.use('/api/business', businessRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/referrals', referralsRouter);
+app.use('/api/company', companyRouter);
+
 
 app.use((err, _req, res, _next) => {
   console.error(err);

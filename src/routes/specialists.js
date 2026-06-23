@@ -5,6 +5,22 @@ import { getAvailableSlots } from '../services/slots.js';
 
 const router = Router();
 
+// GET /api/specialists — retrieve all specialists
+router.get('/', async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from('specialists')
+      .select('id, full_name, photo_url, specialization, bio')
+      .order('full_name', { ascending: true });
+
+    if (error) throw error;
+    res.json({ specialists: data || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 const slotsQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
   duration: z.coerce.number().int().positive(),
