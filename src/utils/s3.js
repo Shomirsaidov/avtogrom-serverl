@@ -19,13 +19,14 @@ const s3Client = new S3Client({
  * @returns {Promise<{url: string, key: string}>}
  */
 export async function uploadToS3(fileBase64, originalName = 'file', folder = 'chat') {
-  const matches = fileBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
   let mimeType = 'application/octet-stream';
   let buffer;
 
-  if (matches) {
-    mimeType = matches[1];
-    buffer = Buffer.from(matches[2], 'base64');
+  if (fileBase64.startsWith('data:') && fileBase64.includes(';base64,')) {
+    const semiIndex = fileBase64.indexOf(';base64,');
+    mimeType = fileBase64.substring(5, semiIndex);
+    const base64Data = fileBase64.substring(semiIndex + 8);
+    buffer = Buffer.from(base64Data, 'base64');
   } else {
     buffer = Buffer.from(fileBase64, 'base64');
   }
