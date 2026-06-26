@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { supabase } from '../supabase.js';
 import { requireAuth } from '../auth/middleware.js';
-import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { uploadToS3 } from '../utils/s3.js';
 import { sendNotification } from '../services/notifications.js';
 
 const router = Router();
@@ -11,10 +11,11 @@ const sendSchema = z.object({
   body: z.string().min(1).max(2000).optional(),
   photo_base64: z.string().optional(),
   file_base64: z.string().optional(),
+  video_base64: z.string().optional(),
   file_name: z.string().max(255).optional(),
   sender_role: z.enum(['client', 'business']).optional(),
 }).refine(
-  data => data.body || data.photo_base64 || data.file_base64,
+  data => data.body || data.photo_base64 || data.file_base64 || data.video_base64,
   { message: 'Укажите текст сообщения или прикрепите файл' },
 );
 
@@ -195,7 +196,7 @@ router.get('/:id/messages', requireAuth, async (req, res, next) => {
     let query = supabase
       .from('messages')
       .select(`
-        id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at, sender_id,
+        id, conversation_id, sender_role, body, photo_url, file_url, file_name, video_url, created_at, sender_id,
         sender:users(id, name)
       `)
       .eq('conversation_id', id)
@@ -260,27 +261,38 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
     if (parsed.data.sender_role === 'business' && isStaff) {
       senderRole = 'business';
     }
-
     let photoUrl = null;
     let fileUrl = null;
+    let videoUrl = null;
     let fileName = null;
 
-    if (parsed.data.file_base64) {
-      const fname = parsed.data.file_name || 'Файл';
-      const uploadResult = await uploadToCloudinary(parsed.data.file_base64, {
-        folder: 'avtogrom/chat',
-        resource_type: 'auto',
-      });
-      fileUrl = uploadResult.url;
+    if (parsed.data.video_base64) {
+      const fname = parsed.data.file_name || 'Видео.mp4';
+      const uploadResult = await uploadToS3(parsed.data.video_base64, fname, 'chat/videos');
+      videoUrl = uploadResult.url;
+      fileUrl = uploadResult.url; // Backwards compatibility
       fileName = fname;
+    } else if (parsed.data.file_base64) {
+      const fname = parsed.data.file_name || 'Файл';
+      const isVideo = parsed.data.file_base64.startsWith('data:video/') || 
+                      fname.match(/\.(mp4|mov|avi|m4v|webm|3gp)$/i);
+      
+      if (isVideo) {
+        const uploadResult = await uploadToS3(parsed.data.file_base64, fname, 'chat/videos');
+        videoUrl = uploadResult.url;
+        fileUrl = uploadResult.url; // Backwards compatibility
+        fileName = fname;
+      } else {
+        const uploadResult = await uploadToS3(parsed.data.file_base64, fname, 'chat/files');
+        fileUrl = uploadResult.url;
+        fileName = fname;
+      }
     } else if (parsed.data.photo_base64) {
-      const uploadResult = await uploadToCloudinary(parsed.data.photo_base64, {
-        folder: 'avtogrom/chat',
-      });
+      const uploadResult = await uploadToS3(parsed.data.photo_base64, 'photo.jpg', 'chat/images');
       photoUrl = uploadResult.url;
     }
 
-    const msgBody = parsed.data.body || (fileUrl ? `📄 ${fileName}` : photoUrl ? '📷 Фото' : '');
+    const msgBody = parsed.data.body || (videoUrl ? '🎥 Видео' : fileUrl ? `📄 ${fileName}` : photoUrl ? '📷 Фото' : '');
 
     const { data: msg, error: msgErr } = await supabase
       .from('messages')
@@ -291,10 +303,11 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
         photo_url: photoUrl,
         file_url: fileUrl,
         file_name: fileName,
+        video_url: videoUrl,
         sender_id: req.user.sub,
       })
       .select(`
-        id, conversation_id, sender_role, body, photo_url, file_url, file_name, created_at, sender_id,
+        id, conversation_id, sender_role, body, photo_url, file_url, file_name, video_url, created_at, sender_id,
         sender:users(id, name)
       `)
       .single();
@@ -361,7 +374,7 @@ router.post('/:id/messages', requireAuth, async (req, res, next) => {
       }
     })();
 
-    const preview = fileUrl ? '📄 ' + fileName : photoUrl ? '📷 Фото' : msgBody;
+    const preview = videoUrl ? '🎥 Видео' : fileUrl ? '📄 ' + fileName : photoUrl ? '📷 Фото' : msgBody;
 
     await supabase
       .from('conversations')
