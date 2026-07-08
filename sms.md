@@ -230,3 +230,8 @@ curl -X POST "https://gate.smsaero.ru/v2/sms/send" \
   "sign":"MyApp"
 }'
 ```
+
+
+# The api token is 
+
+ipzcPYPJhGrdF917k8ioRRgkH6Wn
