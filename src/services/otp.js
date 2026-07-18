@@ -1,3 +1,5 @@
+import { normalizePhoneNumber } from '../utils/phone.js';
+
 const otpCache = new Map(); // phone -> { code, expiresAt, attempts }
 
 const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
@@ -10,8 +12,8 @@ const MAX_ATTEMPTS = 5;
  * @returns {string} The generated 6-digit OTP code
  */
 export function generateOTP(phone) {
-  // Normalize phone number to base digit sequence
-  const normalizedPhone = phone.replace(/[^0-9]/g, '');
+  // Normalize phone number to standard format
+  const normalizedPhone = normalizePhoneNumber(phone);
   
   // Generate 6-digit numeric code
   const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -34,7 +36,7 @@ export function generateOTP(phone) {
  * @returns {Object} Object indicating success or failure message
  */
 export function verifyOTP(phone, code) {
-  const normalizedPhone = phone.replace(/[^0-9]/g, '');
+  const normalizedPhone = normalizePhoneNumber(phone);
   const record = otpCache.get(normalizedPhone);
   
   if (!record) {

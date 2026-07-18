@@ -7,6 +7,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { handleReferralSignup } from '../services/referrals.js';
 import { sendSMS } from '../services/sms.js';
 import { generateOTP, verifyOTP } from '../services/otp.js';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 const router = Router();
 
@@ -85,7 +86,7 @@ router.post('/verify-phone', requireAuth, async (req, res, next) => {
       return res.status(400).json({ error: otpResult.message });
     }
 
-    const normalizedPhone = phone.replace(/[^0-9]/g, '');
+    const normalizedPhone = normalizePhoneNumber(phone);
 
     // Check if phone number is already registered by another user
     const { data: existingPhone } = await supabase
@@ -134,7 +135,7 @@ router.post('/register', async (req, res, next) => {
       return res.status(409).json({ error: 'Email уже зарегистрирован' });
     }
 
-    const normalizedPhone = phone ? phone.replace(/[^0-9]/g, '') : null;
+    const normalizedPhone = phone ? normalizePhoneNumber(phone) : null;
 
     // Verify phone if supplied
     if (phone) {
@@ -207,7 +208,7 @@ router.post('/login', async (req, res, next) => {
     if (isEmail) {
       query = query.eq('email', identifier.trim().toLowerCase());
     } else {
-      const normalizedPhone = identifier.replace(/[^0-9]/g, '');
+      const normalizedPhone = normalizePhoneNumber(identifier);
       query = query.eq('phone', normalizedPhone);
     }
 

@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import { normalizePhoneNumber } from '../utils/phone.js';
 
 /**
  * Sends an SMS message to a phone number using SMS Aero API.
@@ -20,8 +21,8 @@ export async function sendSMS(phone, text) {
     return { success: true, mock: true };
   }
 
-  // Format phone: remove any leading + and non-digits
-  const formattedPhone = phone.replace(/[^0-9]/g, '');
+  // Format phone using normalization utility
+  const formattedPhone = normalizePhoneNumber(phone);
 
   const auth = Buffer.from(`${email}:${apiKey}`).toString('base64');
   
