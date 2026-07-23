@@ -62,7 +62,7 @@ router.post('/otp/send', async (req, res, next) => {
     const code = generateOTP(phone);
 
     // Send SMS
-    const text = `Код подтверждения: ${code}. Действителен 5 минут.`;
+    const text = `Код подтверждения для входа в Автогром (avtogrom.ru): ${code}. Действителен 5 минут.`;
     await sendSMS(phone, text);
 
     res.json({ success: true });
