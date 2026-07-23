@@ -12,7 +12,7 @@ import { normalizePhoneNumber } from '../utils/phone.js';
 export async function sendSMS(phone, text) {
   const email = process.env.SMS_AERO_EMAIL;
   const apiKey = process.env.SMS_AERO_API_KEY;
-  const sign = process.env.SMS_AERO_SIGN || 'SMS Aero';
+  const sign = 'SMS Aero';
   const baseUrl = process.env.SMS_AERO_BASE_URL || 'https://gate.smsaero.ru/v2';
 
   if (!email || !apiKey) {
